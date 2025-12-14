@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
 
 jobs:
   test:
@@ -12,33 +12,35 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        # Use Postgres image with pgvector pre-installed
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: app
           POSTGRES_USER: app
           POSTGRES_PASSWORD: app
         ports:
-          - "5433:5432"
+          - 5433:5432
         options: >-
           --health-cmd="pg_isready -U app -d app"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
 
-      redis:
-        image: redis:7
-        ports:
-          - "6379:6379"
-
     env:
-      DATABASE_URL: postgres://app:app@localhost:5433/app
+      # Match your local DB config (app/app on 127.0.0.1:5433)
+      DB_NAME: app
+      DB_USER: app
+      DB_PASSWORD: app
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5433
+
       DJANGO_SETTINGS_MODULE: config.settings
-      CELERY_BROKER_URL: redis://localhost:6379/0
-      CELERY_RESULT_BACKEND: redis://localhost:6379/0
       PYTHONUNBUFFERED: "1"
+      SECRET_KEY: dummy-secret-key-for-ci
+      DEBUG: "0"
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -46,15 +48,24 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install system deps
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libpq-dev
+          sudo apt-get install -y build-essential libpq-dev postgresql-client
 
-      - name: Install Python deps
+      - name: Wait for Postgres
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          until pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER"; do
+            echo "Postgres is unavailable - sleeping"
+            sleep 2
+          done
+          echo "Postgres is up"
+
+      - name: Enable pgvector extension
+        run: |
+          PGPASSWORD="$DB_PASSWORD" psql \
+            -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+            -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Run migrations
         run: |
