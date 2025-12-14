@@ -12,7 +12,7 @@ jobs:
 
     services:
       postgres:
-        # pgvector-enabled Postgres image
+        # Postgres with pgvector extension available
         image: ankane/pgvector:latest
         env:
           POSTGRES_DB: app
@@ -27,7 +27,7 @@ jobs:
           --health-retries=5
 
     env:
-      # match your Django DATABASES config
+      # Match your Django DATABASES / dj-database-url config
       DB_NAME: app
       DB_USER: app
       DB_PASSWORD: app
@@ -72,6 +72,11 @@ jobs:
         env:
           PGPASSWORD: ${{ env.DB_PASSWORD }}
         run: |
+          # Make pgvector available in the template DB so Django's test DB inherits it
+          psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d template1 \
+            -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+          # Also ensure it's available in the main app DB used for manage.py migrate
           psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
