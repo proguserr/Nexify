@@ -12,8 +12,8 @@ jobs:
 
     services:
       postgres:
-        # Use Postgres image with pgvector pre-installed
-        image: pgvector/pgvector:pg16
+        # pgvector-enabled Postgres image
+        image: ankane/pgvector:latest
         env:
           POSTGRES_DB: app
           POSTGRES_USER: app
@@ -27,7 +27,7 @@ jobs:
           --health-retries=5
 
     env:
-      # Match your local DB config (app/app on 127.0.0.1:5433)
+      # match your Django DATABASES config
       DB_NAME: app
       DB_USER: app
       DB_PASSWORD: app
@@ -48,23 +48,30 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install system dependencies
+      - name: Install system deps (psycopg, psql client)
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libpq-dev postgresql-client
 
-      - name: Wait for Postgres
+      - name: Install Python dependencies
         run: |
-          until pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER"; do
-            echo "Postgres is unavailable - sleeping"
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Wait for Postgres
+        env:
+          PGPASSWORD: ${{ env.DB_PASSWORD }}
+        run: |
+          until pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME"; do
+            echo "Waiting for Postgres..."
             sleep 2
           done
-          echo "Postgres is up"
 
-      - name: Enable pgvector extension
+      - name: Create pgvector extension
+        env:
+          PGPASSWORD: ${{ env.DB_PASSWORD }}
         run: |
-          PGPASSWORD="$DB_PASSWORD" psql \
-            -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+          psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
       - name: Run migrations
@@ -73,4 +80,4 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest
+          python -m pytest
