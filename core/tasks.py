@@ -5,7 +5,7 @@ import logging
 from typing import List
 
 from celery import shared_task
-from celery.exceptions import MaxRetriesExceededError, Retry
+from celery.exceptions import MaxRetriesExceededError
 from django.db import transaction
 from django.utils import timezone
 
@@ -134,11 +134,7 @@ def embed_document_chunks(document_id: int) -> None:
     to verify wiring end-to-end.
     """
     doc = Document.objects.get(id=document_id)
-    chunks = list(
-        DocumentChunk.objects
-        .filter(document=doc)
-        .order_by("chunk_index")
-    )
+    chunks = list(DocumentChunk.objects.filter(document=doc).order_by("chunk_index"))
 
     if not chunks:
         return

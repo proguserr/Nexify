@@ -15,27 +15,37 @@ from .views import (
 )
 
 # Suggestions
-suggestion_list = SuggestionViewSet.as_view({
-    "get": "list",
-})
-suggestion_detail = SuggestionViewSet.as_view({
-    "get": "retrieve",
-    "patch": "partial_update",
-})
+suggestion_list = SuggestionViewSet.as_view(
+    {
+        "get": "list",
+    }
+)
+suggestion_detail = SuggestionViewSet.as_view(
+    {
+        "get": "retrieve",
+        "patch": "partial_update",
+    }
+)
 
 # Documents
-document_list = DocumentViewSet.as_view({
-    "get": "list",    # list documents
-    "post": "create", # upload + chunk + embed
-})
-document_detail = DocumentViewSet.as_view({
-    "get": "retrieve",
-})
+document_list = DocumentViewSet.as_view(
+    {
+        "get": "list",  # list documents
+        "post": "create",  # upload + chunk + embed
+    }
+)
+document_detail = DocumentViewSet.as_view(
+    {
+        "get": "retrieve",
+    }
+)
 
 # Document chunks
-document_chunks = DocumentChunkViewSet.as_view({
-    "get": "list",
-})
+document_chunks = DocumentChunkViewSet.as_view(
+    {
+        "get": "list",
+    }
+)
 
 
 urlpatterns = [
@@ -52,21 +62,17 @@ urlpatterns = [
         OrganizationTicketListView.as_view(),
         name="org-ticket-list",
     ),
-
     # Auth
     path("auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
-
     # Me
     path("me/", MeView.as_view(), name="me"),
-
     # Triage
     path(
         "tickets/<int:pk>/trigger-triage/",
         TicketTriggerTriageView.as_view(),
         name="ticket-trigger-triage",
     ),
-
     # Suggestions CRUD
     path(
         "organizations/<int:org_id>/tickets/<int:ticket_id>/suggestions/",
@@ -78,7 +84,6 @@ urlpatterns = [
         suggestion_detail,
         name="ticket-suggestion-detail",
     ),
-
     # Knowledge base documents (PR8–10)
     path(
         "organizations/<int:org_id>/documents/",
@@ -95,7 +100,6 @@ urlpatterns = [
         document_chunks,
         name="org-document-chunks",
     ),
-
     # KB retrieval (PR11)
     path(
         "organizations/<int:org_id>/kb/retrieve/",

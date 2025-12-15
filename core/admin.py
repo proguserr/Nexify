@@ -8,6 +8,7 @@ from .models import (
     Suggestion,
 )
 
+
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
     list_display = ("id", "name", "created_at")
@@ -25,7 +26,15 @@ class MembershipAdmin(admin.ModelAdmin):
 
 @admin.register(Ticket)
 class TicketAdmin(admin.ModelAdmin):
-    list_display = ("id", "organization", "subject", "status", "priority", "assigned_team", "created_at")
+    list_display = (
+        "id",
+        "organization",
+        "subject",
+        "status",
+        "priority",
+        "assigned_team",
+        "created_at",
+    )
     list_filter = ("organization", "status", "priority", "assigned_team")
     search_fields = ("subject", "requester_email", "organization__name")
     ordering = ("-created_at",)
@@ -33,7 +42,15 @@ class TicketAdmin(admin.ModelAdmin):
 
 @admin.register(TicketEvent)
 class TicketEventAdmin(admin.ModelAdmin):
-    list_display = ("id", "organization", "ticket", "event_type", "actor_type", "actor_user", "created_at")
+    list_display = (
+        "id",
+        "organization",
+        "ticket",
+        "event_type",
+        "actor_type",
+        "actor_user",
+        "created_at",
+    )
     list_filter = ("organization", "event_type", "actor_type")
     search_fields = ("ticket__subject", "organization__name", "actor_user__username")
     ordering = ("-created_at",)
@@ -53,14 +70,27 @@ class JobRunAdmin(admin.ModelAdmin):
         "created_at",
     )
     list_filter = ("organization", "status")
-    search_fields = ("idempotency_key", "ticket__subject", "triggered_by__username", "organization__name")
+    search_fields = (
+        "idempotency_key",
+        "ticket__subject",
+        "triggered_by__username",
+        "organization__name",
+    )
     ordering = ("-created_at",)
     readonly_fields = ("created_at",)
 
 
 @admin.register(Suggestion)
 class SuggestionAdmin(admin.ModelAdmin):
-    list_display = ("id", "organization", "ticket", "job_run", "suggested_team", "suggested_priority", "created_at")
+    list_display = (
+        "id",
+        "organization",
+        "ticket",
+        "job_run",
+        "suggested_team",
+        "suggested_priority",
+        "created_at",
+    )
     list_filter = ("organization", "suggested_team", "suggested_priority")
     search_fields = ("ticket__subject", "organization__name", "draft_reply")
     ordering = ("-created_at",)

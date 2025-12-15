@@ -59,6 +59,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Lint with ruff
+        run: |
+          ruff check .
+
+      - name: Check formatting with black
+        run: |
+          black --check .    
+
       - name: Wait for Postgres
         env:
           PGPASSWORD: ${{ env.DB_PASSWORD }}

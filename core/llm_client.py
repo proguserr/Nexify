@@ -18,6 +18,7 @@ class LLMError(Exception):
     Generic error raised when the LLM (Ollama) call fails
     or returns an unexpected response.
     """
+
     pass
 
 
@@ -65,11 +66,13 @@ def _parse_json_from_text(text: str) -> Dict[str, Any]:
     last = text.rfind("}")
     if first == -1 or last == -1 or last <= first:
         raise LLMError(f"No JSON object found in LLM output: {text!r}")
-    snippet = text[first:last + 1]
+    snippet = text[first : last + 1]
     return json.loads(snippet)
 
 
-def classify_ticket_with_llm(ticket: Ticket, kb_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+def classify_ticket_with_llm(
+    ticket: Ticket, kb_results: List[Dict[str, Any]]
+) -> Dict[str, Any]:
     """
     Use Llama 3 via Ollama to:
       - classify the ticket (category/team/priority)
@@ -93,13 +96,13 @@ def classify_ticket_with_llm(ticket: Ticket, kb_results: List[Dict[str, Any]]) -
         "You MUST respond with a single JSON object only, no explanation.\n"
         "Schema:\n"
         "{\n"
-        '  \"category\": string,        # short category like \"billing\", \"technical\", \"account\"\n'
-        '  \"team\": string,            # team to route to, e.g. \"billing\", \"support\", \"engineering\"\n'
-        '  \"priority\": string,        # one of: \"low\", \"medium\", \"high\", \"urgent\"\n'
-        '  \"draft_reply\": string      # short 2-5 sentence reply to send the customer\n'
+        '  "category": string,        # short category like "billing", "technical", "account"\n'
+        '  "team": string,            # team to route to, e.g. "billing", "support", "engineering"\n'
+        '  "priority": string,        # one of: "low", "medium", "high", "urgent"\n'
+        '  "draft_reply": string      # short 2-5 sentence reply to send the customer\n'
         "}\n"
         "If you are unsure, guess reasonable defaults: "
-        "category=\"general\", team=\"support\", priority=\"medium\"."
+        'category="general", team="support", priority="medium".'
     )
 
     user_msg = (

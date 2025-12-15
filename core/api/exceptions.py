@@ -7,6 +7,7 @@ from rest_framework.views import exception_handler as drf_exception_handler
 
 logger = logging.getLogger(__name__)
 
+
 def api_exception_handler(exc, context):
     # Let DRF handle known exceptions (401/403/404/validation errors, etc.)
     response = drf_exception_handler(exc, context)
@@ -17,7 +18,9 @@ def api_exception_handler(exc, context):
         "Unhandled exception in API",
         exc_info=(type(exc), exc, exc.__traceback__),
         extra={
-            "view": getattr(context.get("view"), "__class__", type("x", (), {})).__name__,
+            "view": getattr(
+                context.get("view"), "__class__", type("x", (), {})
+            ).__name__,
             "request_path": getattr(context.get("request"), "path", None),
             "request_method": getattr(context.get("request"), "method", None),
         },
@@ -33,4 +36,7 @@ def api_exception_handler(exc, context):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
-    return Response({"detail": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return Response(
+        {"detail": "Internal server error"},
+        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    )

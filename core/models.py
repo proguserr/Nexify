@@ -5,7 +5,8 @@ from django.db.models import Q
 from pgvector.django import VectorField
 
 
-EMBED_DIM = 384 
+EMBED_DIM = 384
+
 
 # Create your models here.
 class Organization(models.Model):
@@ -16,17 +17,20 @@ class Organization(models.Model):
         name (CharField): The unique name of the organization.
         created_at (DateTimeField): The timestamp when the organization was created.
     """
+
     name = models.CharField(max_length=200, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
         return self.name
-    
+
+
 class Membership(models.Model):
     class RoleChoices(models.TextChoices):
         ADMIN = "admin", "Admin"
         AGENT = "agent", "Agent"
         VIEWER = "viewer", "Viewer"
+
     """
     Represents the membership of a user in an organization.
 
@@ -36,14 +40,10 @@ class Membership(models.Model):
         joined_at (DateTimeField): The timestamp when the user joined the organization.
     """
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="memberships"
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="memberships"
     )
     organization = models.ForeignKey(
-        "Organization",
-        on_delete=models.CASCADE,
-        related_name="memberships"
+        "Organization", on_delete=models.CASCADE, related_name="memberships"
     )
     role = models.CharField(
         max_length=20,
@@ -56,14 +56,13 @@ class Membership(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["user", "organization"],
-                name="uniq_membership_user_org"
+                fields=["user", "organization"], name="uniq_membership_user_org"
             )
         ]
 
     def __str__(self) -> str:
         return f"{self.user_id} in {self.organization_id} ({self.role})"
-    
+
 
 class Ticket(models.Model):
     """
@@ -75,6 +74,7 @@ class Ticket(models.Model):
         description (TextField): The detailed description of the ticket.
         created_at (DateTimeField): The timestamp when the ticket was created.
     """
+
     class Status(models.TextChoices):
         OPEN = "open", "Open"
         IN_PROGRESS = "in_progress", "In Progress"
@@ -87,9 +87,7 @@ class Ticket(models.Model):
         URGENT = "urgent", "Urgent"
 
     organization = models.ForeignKey(
-        Organization,
-        on_delete=models.CASCADE,
-        related_name="tickets"
+        Organization, on_delete=models.CASCADE, related_name="tickets"
     )
 
     requester_email = models.EmailField()
@@ -115,8 +113,8 @@ class Ticket(models.Model):
     def __str__(self) -> str:
         return f"[{self.organization_id}] {self.subject[:50]}"
 
-class TicketEvent(models.Model):
 
+class TicketEvent(models.Model):
     class EventType(models.TextChoices):
         CREATED = "created", "Created"
         STATUS_CHANGED = "status_changed", "Status Changed"
@@ -129,19 +127,28 @@ class TicketEvent(models.Model):
         SUGGESTION_APPROVED = "suggestion_approved", "Suggestion approved"
         SUGGESTION_REJECTED = "suggestion_rejected", "Suggestion rejected"
 
-
     class ActorType(models.TextChoices):
         USER = "user", "User"
         SYSTEM = "system", "System"
         AI = "ai", "AI"
         WEBHOOK = "webhook", "Webhook"
 
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="ticket_events")
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="ticket_events"
+    )
     ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="events")
-    job_run = models.ForeignKey("JobRun", on_delete=models.SET_NULL,null=True,blank=True,related_name="events",)
+    job_run = models.ForeignKey(
+        "JobRun",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="events",
+    )
 
     event_type = models.CharField(max_length=50, choices=EventType.choices)
-    actor_type = models.CharField(max_length=20, choices=ActorType.choices, default=ActorType.SYSTEM)
+    actor_type = models.CharField(
+        max_length=20, choices=ActorType.choices, default=ActorType.SYSTEM
+    )
     actor_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -167,24 +174,27 @@ class TicketEvent(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"TicketEvent({self.event_type}) ticket={self.ticket_id}" 
-    
+        return f"TicketEvent({self.event_type}) ticket={self.ticket_id}"
 
-    
+
 class JobRun(models.Model):
-
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"
         RUNNING = "running", "Running"
         SUCCEEDED = "succeeded", "Succeeded"
         FAILED = "failed", "Failed"
 
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="job_runs"
+    )
 
-    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="job_runs")
+    ticket = models.ForeignKey(
+        Ticket, on_delete=models.CASCADE, related_name="job_runs"
+    )
 
-    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="job_runs")
-
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.QUEUED)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.QUEUED
+    )
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     error = models.TextField(blank=True, default="")
@@ -216,8 +226,7 @@ class JobRun(models.Model):
     def mark_running(self):
         self.status = self.Status.RUNNING
         self.started_at = timezone.now()
-        self.save(update_fields=["status", "started_at"]) 
-
+        self.save(update_fields=["status", "started_at"])
 
     def mark_succeeded(self):
         self.status = self.Status.SUCCEEDED
@@ -276,8 +285,6 @@ class Suggestion(models.Model):
         indexes = [
             models.Index(fields=["organization", "ticket", "created_at"]),
         ]
-    
-
 
 
 class Document(models.Model):
@@ -285,6 +292,7 @@ class Document(models.Model):
     Knowledge base document owned by an organization.
     V1 stores raw text; later versions can store file + extraction metadata.
     """
+
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
@@ -302,7 +310,9 @@ class Document(models.Model):
         related_name="uploaded_documents",
     )
 
-    metadata = models.JSONField(default=dict, blank=True)  # optional (source, mime, etc.)
+    metadata = models.JSONField(
+        default=dict, blank=True
+    )  # optional (source, mime, etc.)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -318,6 +328,7 @@ class DocumentChunk(models.Model):
     """
     A chunk (slice) of a Document. This becomes the unit of retrieval + embeddings later.
     """
+
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
@@ -357,6 +368,3 @@ class DocumentChunk(models.Model):
 
     def __str__(self) -> str:
         return f"Chunk(doc={self.document_id}, idx={self.chunk_index})"
-        
-
-

@@ -12,7 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
-from dotenv import load_dotenv 
+from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
 
@@ -47,7 +47,6 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "django_filters",
     "pgvector.django",
-    
 ]
 
 MIDDLEWARE = [
@@ -80,7 +79,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(hours=2),   # was minutes=5 by default
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=2),  # was minutes=5 by default
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     # optional:
     # "ROTATE_REFRESH_TOKENS": False,
@@ -99,13 +98,14 @@ DATABASES = {
 }
 
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
     "DEFAULT_PARSER_CLASSES": ("rest_framework.parsers.JSONParser",),
     "EXCEPTION_HANDLER": "core.api.exceptions.api_exception_handler",
     "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
-    
 }
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -156,6 +156,3 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
-
-
-

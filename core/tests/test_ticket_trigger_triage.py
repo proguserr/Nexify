@@ -16,7 +16,9 @@ class TestTicketTriggerTriageView(APITestCase):
     def setUp(self):
         self.org = Organization.objects.create(name="Org A")
         self.user = User.objects.create_user(username="u1", password="pass12345")
-        Membership.objects.create(user=self.user, organization=self.org, role=Membership.RoleChoices.AGENT)
+        Membership.objects.create(
+            user=self.user, organization=self.org, role=Membership.RoleChoices.AGENT
+        )
 
         self.ticket = Ticket.objects.create(
             organization=self.org,
@@ -31,14 +33,24 @@ class TestTicketTriggerTriageView(APITestCase):
         self.url = reverse("ticket-trigger-triage", kwargs={"pk": self.ticket.id})
 
     def test_requires_auth(self):
-        resp = self.client.post(self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY="test-triage-1",)
+        resp = self.client.post(
+            self.url,
+            data={},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="test-triage-1",
+        )
         self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_non_member_gets_404(self):
         u2 = User.objects.create_user(username="u2", password="pass12345")
         self.client.force_authenticate(user=u2)
 
-        resp = self.client.post(self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY="test-triage-1",)
+        resp = self.client.post(
+            self.url,
+            data={},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="test-triage-1",
+        )
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_no_cross_org_leak(self):
@@ -53,14 +65,21 @@ class TestTicketTriggerTriageView(APITestCase):
         self.client.force_authenticate(user=self.user)
         url2 = reverse("ticket-trigger-triage", kwargs={"pk": ticket2.id})
 
-        resp = self.client.post(url2, data={}, format="json", HTTP_IDEMPOTENCY_KEY="test-triage-1",)
+        resp = self.client.post(
+            url2,
+            data={},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="test-triage-1",
+        )
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
     @patch("core.api.views.run_ticket_triage.delay")
     def test_creates_jobrun_and_enqueues_task(self, delay_mock):
         self.client.force_authenticate(user=self.user)
 
-        resp = self.client.post(self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY="test-triage-1")
+        resp = self.client.post(
+            self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY="test-triage-1"
+        )
         self.assertEqual(resp.status_code, status.HTTP_202_ACCEPTED)
 
         job_id = resp.data["job_run_id"]
@@ -73,19 +92,22 @@ class TestTicketTriggerTriageView(APITestCase):
 
         delay_mock.assert_called_once_with(job.id)
 
+
 class TestTicketTriggerTriageIdempotency(APITestCase):
     def setUp(self):
         User = get_user_model()
         self.user = User.objects.create_user(username="sam", password="pw123")
 
         self.org = Organization.objects.create(name="Org1")
-        Membership.objects.create(user=self.user, organization=self.org, role=Membership.RoleChoices.ADMIN)
+        Membership.objects.create(
+            user=self.user, organization=self.org, role=Membership.RoleChoices.ADMIN
+        )
 
         self.ticket = Ticket.objects.create(
             organization=self.org,
             requester_email="a@b.com",
             subject="payment failed",
-            body="I got charged twice"
+            body="I got charged twice",
         )
 
         self.url = reverse("ticket-trigger-triage", kwargs={"pk": self.ticket.id})
@@ -109,7 +131,9 @@ class TestTicketTriggerTriageIdempotency(APITestCase):
     @patch("core.api.views.run_ticket_triage.delay")
     def test_first_call_creates_jobrun_and_enqueues(self, delay_mock):
         idem = "triage-1"
-        resp = self.client.post(self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY=idem)
+        resp = self.client.post(
+            self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY=idem
+        )
 
         self.assertEqual(resp.status_code, 202)
         self.assertTrue(resp.data["created"])
@@ -128,13 +152,19 @@ class TestTicketTriggerTriageIdempotency(APITestCase):
     def test_same_idempotency_key_returns_same_jobrun(self, delay_mock):
         idem = "triage-dup"
 
-        r1 = self.client.post(self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY=idem)
+        r1 = self.client.post(
+            self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY=idem
+        )
         job_id_1 = r1.data["job_run_id"]
 
         # Make it look "already started" so your should_enqueue logic doesn't enqueue again.
-        JobRun.objects.filter(id=job_id_1).update(status=JobRun.Status.RUNNING, started_at=timezone.now())
+        JobRun.objects.filter(id=job_id_1).update(
+            status=JobRun.Status.RUNNING, started_at=timezone.now()
+        )
 
-        r2 = self.client.post(self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY=idem)
+        r2 = self.client.post(
+            self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY=idem
+        )
 
         self.assertEqual(r2.status_code, 200)
         self.assertFalse(r2.data["created"])
@@ -143,12 +173,18 @@ class TestTicketTriggerTriageIdempotency(APITestCase):
         # still only enqueued once (from first call)
         delay_mock.assert_called_once()
 
-        self.assertEqual(JobRun.objects.filter(ticket=self.ticket, idempotency_key=idem).count(), 1)
+        self.assertEqual(
+            JobRun.objects.filter(ticket=self.ticket, idempotency_key=idem).count(), 1
+        )
 
     @patch("core.api.views.run_ticket_triage.delay")
     def test_different_idempotency_key_creates_new_jobrun(self, delay_mock):
-        r1 = self.client.post(self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY="k1")
-        r2 = self.client.post(self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY="k2")
+        r1 = self.client.post(
+            self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY="k1"
+        )
+        r2 = self.client.post(
+            self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY="k2"
+        )
 
         self.assertEqual(r1.status_code, 202)
         self.assertEqual(r2.status_code, 202)

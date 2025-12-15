@@ -21,11 +21,17 @@ class TestTicketEventListView(APITestCase):
         self.org2 = Organization.objects.create(name="Org 2")
 
         # Users
-        self.member = User.objects.create_user(username="member", email="m@x.com", password="pass1234")
-        self.outsider = User.objects.create_user(username="outsider", email="o@x.com", password="pass1234")
+        self.member = User.objects.create_user(
+            username="member", email="m@x.com", password="pass1234"
+        )
+        self.outsider = User.objects.create_user(
+            username="outsider", email="o@x.com", password="pass1234"
+        )
 
         # Membership: member belongs to org1 only
-        Membership.objects.create(user=self.member, organization=self.org1, role=Membership.RoleChoices.ADMIN)
+        Membership.objects.create(
+            user=self.member, organization=self.org1, role=Membership.RoleChoices.ADMIN
+        )
 
         # Tickets
         self.ticket1 = Ticket.objects.create(
@@ -81,9 +87,15 @@ class TestTicketEventListView(APITestCase):
         )
 
         # Set created_at explicitly (auto_now_add prevents direct set on create)
-        TicketEvent.objects.filter(id=self.e1.id).update(created_at=now - timedelta(days=5))
-        TicketEvent.objects.filter(id=self.e2.id).update(created_at=now - timedelta(days=3))
-        TicketEvent.objects.filter(id=self.e3.id).update(created_at=now - timedelta(days=1))
+        TicketEvent.objects.filter(id=self.e1.id).update(
+            created_at=now - timedelta(days=5)
+        )
+        TicketEvent.objects.filter(id=self.e2.id).update(
+            created_at=now - timedelta(days=3)
+        )
+        TicketEvent.objects.filter(id=self.e3.id).update(
+            created_at=now - timedelta(days=1)
+        )
 
         # Event for another ticket in same org (must NOT leak into ticket1 events)
         self.other_ticket_event = TicketEvent.objects.create(
@@ -154,10 +166,16 @@ class TestTicketEventListView(APITestCase):
         self.client.force_authenticate(user=self.member)
 
         # Include only events from (now-4d) to (now-2d) => should match e2 only
-        created_from = (timezone.now() - timedelta(days=4)).isoformat().replace("+00:00", "Z")
-        created_to = (timezone.now() - timedelta(days=2)).isoformat().replace("+00:00", "Z")
+        created_from = (
+            (timezone.now() - timedelta(days=4)).isoformat().replace("+00:00", "Z")
+        )
+        created_to = (
+            (timezone.now() - timedelta(days=2)).isoformat().replace("+00:00", "Z")
+        )
 
-        res = self.client.get(url, {"created_from": created_from, "created_to": created_to})
+        res = self.client.get(
+            url, {"created_from": created_from, "created_to": created_to}
+        )
         self.assertEqual(res.status_code, 200)
 
         ids = [row["id"] for row in res.data["results"]]
@@ -194,7 +212,9 @@ class TestTicketEventListView(APITestCase):
 
         # spread timestamps a bit (not strictly necessary for pagination)
         for idx, ev_id in enumerate(extra_ids):
-            TicketEvent.objects.filter(id=ev_id).update(created_at=now - timedelta(minutes=idx))
+            TicketEvent.objects.filter(id=ev_id).update(
+                created_at=now - timedelta(minutes=idx)
+            )
 
         url = self._url(self.ticket1.id)
         self.client.force_authenticate(user=self.member)

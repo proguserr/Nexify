@@ -18,7 +18,9 @@ class LLMError(Exception):
     pass
 
 
-def _call_ollama_chat(prompt: str, system_prompt: str | None = None, timeout: float = 20.0) -> str:
+def _call_ollama_chat(
+    prompt: str, system_prompt: str | None = None, timeout: float = 20.0
+) -> str:
     """
     Call Ollama's /api/chat endpoint with a single user message (plus optional system).
     Returns the assistant content as a string.
@@ -61,7 +63,9 @@ def _backend_name() -> str:
     return LLM_BACKEND
 
 
-def generate_json(prompt: str, schema_hint: str, timeout: float = 20.0) -> Dict[str, Any]:
+def generate_json(
+    prompt: str, schema_hint: str, timeout: float = 20.0
+) -> Dict[str, Any]:
     """
     Ask the LLM to return STRICT JSON following the given schema hint.
     We do simple JSON parsing + key validation, no pydantic to keep deps light.
@@ -87,7 +91,9 @@ User request:
 
     backend = _backend_name()
     if backend == "ollama":
-        raw = _call_ollama_chat(full_prompt, system_prompt=system_prompt, timeout=timeout)
+        raw = _call_ollama_chat(
+            full_prompt, system_prompt=system_prompt, timeout=timeout
+        )
     else:
         # fallback "mock" backend for tests
         logger.warning("LLM_BACKEND=%s not implemented, returning mock output", backend)
@@ -132,7 +138,9 @@ def triage_ticket(
         "draft_reply": str,
       }
     """
-    kb_text = "\n\n-----\n".join(kb_snippets) if kb_snippets else "No KB context available."
+    kb_text = (
+        "\n\n-----\n".join(kb_snippets) if kb_snippets else "No KB context available."
+    )
 
     schema_hint = """
 {

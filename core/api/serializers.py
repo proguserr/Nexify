@@ -4,10 +4,8 @@ from rest_framework import serializers
 
 from core.models import (
     Organization,
-    Membership,
     Ticket,
     TicketEvent,
-    JobRun,
     Suggestion,
     Document,
     DocumentChunk,
@@ -24,7 +22,9 @@ class TicketCreateSerializer(serializers.ModelSerializer):
 
     def validate_organization_id(self, value: int) -> int:
         if not Organization.objects.filter(id=value).exists():
-            raise serializers.ValidationError("Organization with given ID does not exist.")
+            raise serializers.ValidationError(
+                "Organization with given ID does not exist."
+            )
         return value
 
     def create(self, validated_data):
@@ -51,7 +51,9 @@ class TicketCreateSerializer(serializers.ModelSerializer):
                 )
                 return ticket
         except IntegrityError:
-            raise serializers.ValidationError({"detail": "Invalid data (constraint failed)."})
+            raise serializers.ValidationError(
+                {"detail": "Invalid data (constraint failed)."}
+            )
 
 
 class TicketSerializer(serializers.ModelSerializer):
@@ -108,7 +110,6 @@ class TicketEventSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-
 class SuggestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Suggestion
@@ -129,22 +130,31 @@ class SuggestionSerializer(serializers.ModelSerializer):
 
 class SuggestionUpdateAgentSerializer(serializers.ModelSerializer):
     """Agents can only edit the draft reply."""
+
     class Meta:
         model = Suggestion
-        fields = ["draft_reply",
-                  "metadata",
+        fields = [
+            "draft_reply",
+            "metadata",
         ]
 
 
 class SuggestionUpdateAdminSerializer(serializers.ModelSerializer):
     """Admins can override more fields (optional)."""
-    suggested_priority = serializers.ChoiceField(choices=Ticket.Priority.choices, required=False)
+
+    suggested_priority = serializers.ChoiceField(
+        choices=Ticket.Priority.choices, required=False
+    )
 
     class Meta:
         model = Suggestion
-        fields = ["status","draft_reply", "suggested_team", "suggested_priority", "metadata"]
-
-
+        fields = [
+            "status",
+            "draft_reply",
+            "suggested_team",
+            "suggested_priority",
+            "metadata",
+        ]
 
 
 class DocumentCreateSerializer(serializers.ModelSerializer):
@@ -171,7 +181,13 @@ class DocumentSerializer(serializers.ModelSerializer):
             "created_at",
             "chunk_count",
         ]
-        read_only_fields = ["id", "organization", "uploaded_by", "created_at", "chunk_count"]
+        read_only_fields = [
+            "id",
+            "organization",
+            "uploaded_by",
+            "created_at",
+            "chunk_count",
+        ]
 
     def get_chunk_count(self, obj):
         # Supports either annotation (obj.chunk_count) or fallback to relation count.
@@ -183,18 +199,37 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Document
-        fields = ["id", "organization", "title", "text", "metadata", "uploaded_by", "created_at", "chunks_preview"]
+        fields = [
+            "id",
+            "organization",
+            "title",
+            "text",
+            "metadata",
+            "uploaded_by",
+            "created_at",
+            "chunks_preview",
+        ]
         read_only_fields = fields
 
     def get_chunks_preview(self, obj):
-        qs = obj.chunks.order_by("chunk_index").values("chunk_index", "char_start", "char_end")
+        qs = obj.chunks.order_by("chunk_index").values(
+            "chunk_index", "char_start", "char_end"
+        )
         return list(qs[:5])
 
 
 class DocumentChunkSerializer(serializers.ModelSerializer):
     class Meta:
         model = DocumentChunk
-        fields = ["id", "document", "chunk_index", "text", "char_start", "char_end", "created_at"]
+        fields = [
+            "id",
+            "document",
+            "chunk_index",
+            "text",
+            "char_start",
+            "char_end",
+            "created_at",
+        ]
         read_only_fields = fields
 
 
@@ -208,6 +243,7 @@ class KnowledgeBaseRetrieveSerializer(serializers.Serializer):
 
     `k` controls how many chunks to return (default 5).
     """
+
     query = serializers.CharField(required=False, allow_blank=True)
     ticket_id = serializers.IntegerField(required=False)
     k = serializers.IntegerField(required=False, min_value=1, max_value=50, default=5)

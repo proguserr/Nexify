@@ -49,11 +49,11 @@ from .serializers import (
 
 from core.kb import chunk_text, normalize_text, search_kb_chunks_for_query
 
-
 # -------------------------
 # Simple helpers (keep them here to avoid import shadowing issues)
 # -------------------------
 
+''' 
 def normalize_text(text: str) -> str:
     if text is None:
         return ""
@@ -88,11 +88,12 @@ def chunk_text(text: str, chunk_size: int = 1200, overlap: int = 200):
         i += step
 
     return out
-
+'''
 
 # -------------------------
 # Auth / Me
 # -------------------------
+
 
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
@@ -115,10 +116,12 @@ class MeView(APIView):
 # Tickets
 # -------------------------
 
+
 class TicketIngestView(APIView):
     """
     POST /api/tickets/  -> create ticket from external client/webhook
     """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -156,7 +159,9 @@ class TicketDetailView(APIView):
         inp.is_valid(raise_exception=True)
         updated_ticket = inp.save()
 
-        return Response(TicketSerializer(updated_ticket).data, status=status.HTTP_200_OK)
+        return Response(
+            TicketSerializer(updated_ticket).data, status=status.HTTP_200_OK
+        )
 
 
 class OrganizationTicketListView(ListAPIView):
@@ -187,7 +192,9 @@ class TicketEventListView(ListAPIView):
 
     def get_queryset(self):
         org_ids = user_org_ids(self.request.user)
-        ticket = get_object_or_404(Ticket, pk=self.kwargs["pk"], organization_id__in=org_ids)
+        ticket = get_object_or_404(
+            Ticket, pk=self.kwargs["pk"], organization_id__in=org_ids
+        )
         self.check_object_permissions(self.request, ticket)
         return TicketEvent.objects.filter(ticket=ticket)
 
@@ -226,7 +233,9 @@ class TicketTriggerTriageView(APIView):
                 )
             created = False
 
-        should_enqueue = created or (job.status == JobRun.Status.QUEUED and job.started_at is None)
+        should_enqueue = created or (
+            job.status == JobRun.Status.QUEUED and job.started_at is None
+        )
         if should_enqueue:
             run_ticket_triage.delay(job.id)
 
@@ -239,12 +248,15 @@ class TicketTriggerTriageView(APIView):
             "error": job.error,
         }
 
-        return Response(payload, status=status.HTTP_202_ACCEPTED if created else status.HTTP_200_OK)
+        return Response(
+            payload, status=status.HTTP_202_ACCEPTED if created else status.HTTP_200_OK
+        )
 
 
 # -------------------------
 # Suggestions
 # -------------------------
+
 
 class SuggestionViewSet(
     mixins.ListModelMixin,
@@ -261,15 +273,16 @@ class SuggestionViewSet(
     ordering = ["-created_at", "-id"]
 
     def _require_membership_or_404(self, request, org_id: int):
-        if not Membership.objects.filter(user=request.user, organization_id=org_id).exists():
+        if not Membership.objects.filter(
+            user=request.user, organization_id=org_id
+        ).exists():
             raise NotFound()
 
     def get_queryset(self):
         org_id = int(self.kwargs["org_id"])
         ticket_id = int(self.kwargs["ticket_id"])
         return (
-            Suggestion.objects
-            .select_related("job_run", "ticket", "organization")
+            Suggestion.objects.select_related("job_run", "ticket", "organization")
             .filter(organization_id=org_id, ticket_id=ticket_id)
             .order_by("-created_at", "-id")
         )
@@ -340,16 +353,20 @@ class SuggestionViewSet(
                 },
             )
 
+
 class SuggestionApproveView(APIView):
     """
     POST /api/organizations/<org_id>/tickets/<ticket_id>/suggestions/<sid>/approve/
     Marks a suggestion as approved and logs a TicketEvent.
     """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request, org_id: int, ticket_id: int, sid: int):
         # must belong to org
-        if not Membership.objects.filter(user=request.user, organization_id=org_id).exists():
+        if not Membership.objects.filter(
+            user=request.user, organization_id=org_id
+        ).exists():
             raise NotFound()
 
         role = user_role_in_org(request.user, org_id)
@@ -401,10 +418,13 @@ class SuggestionRejectView(APIView):
     POST /api/organizations/<org_id>/tickets/<ticket_id>/suggestions/<sid>/reject/
     Marks a suggestion as rejected and logs a TicketEvent.
     """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request, org_id: int, ticket_id: int, sid: int):
-        if not Membership.objects.filter(user=request.user, organization_id=org_id).exists():
+        if not Membership.objects.filter(
+            user=request.user, organization_id=org_id
+        ).exists():
             raise NotFound()
 
         role = user_role_in_org(request.user, org_id)
@@ -454,6 +474,7 @@ class SuggestionRejectView(APIView):
 # Documents (PR8)
 # -------------------------
 
+
 class DocumentViewSet(
     mixins.ListModelMixin,
     mixins.CreateModelMixin,
@@ -469,7 +490,9 @@ class DocumentViewSet(
     ordering = ["-id"]
 
     def _require_membership_or_404(self, request, org_id: int):
-        if not Membership.objects.filter(user=request.user, organization_id=org_id).exists():
+        if not Membership.objects.filter(
+            user=request.user, organization_id=org_id
+        ).exists():
             raise NotFound()
 
     def _require_admin_or_agent(self, request, org_id: int):
@@ -480,8 +503,7 @@ class DocumentViewSet(
     def get_queryset(self):
         org_id = int(self.kwargs["org_id"])
         return (
-            Document.objects
-            .select_related("uploaded_by", "organization")
+            Document.objects.select_related("uploaded_by", "organization")
             .filter(organization_id=org_id)
             .annotate(chunk_count=Count("chunks"))
             .order_by("-id")
@@ -561,17 +583,17 @@ class DocumentChunkViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     ordering = ["chunk_index", "id"]
 
     def _require_membership_or_404(self, request, org_id: int):
-        if not Membership.objects.filter(user=request.user, organization_id=org_id).exists():
+        if not Membership.objects.filter(
+            user=request.user, organization_id=org_id
+        ).exists():
             raise NotFound()
 
     def get_queryset(self):
         org_id = int(self.kwargs["org_id"])
         doc_id = int(self.kwargs["doc_id"])
-        return (
-            DocumentChunk.objects
-            .filter(organization_id=org_id, document_id=doc_id)
-            .order_by("chunk_index")
-        )
+        return DocumentChunk.objects.filter(
+            organization_id=org_id, document_id=doc_id
+        ).order_by("chunk_index")
 
     def list(self, request, *args, **kwargs):
         self._require_membership_or_404(request, int(kwargs["org_id"]))
@@ -592,10 +614,13 @@ class KnowledgeBaseRetrieveView(APIView):
 
     Returns top-k KB chunks for that org.
     """
+
     permission_classes = [IsAuthenticated]
 
     def _require_membership_or_404(self, request, org_id: int):
-        if not Membership.objects.filter(user=request.user, organization_id=org_id).exists():
+        if not Membership.objects.filter(
+            user=request.user, organization_id=org_id
+        ).exists():
             raise NotFound()
 
     def post(self, request, org_id: int):

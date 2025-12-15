@@ -5,7 +5,6 @@ import os
 import logging
 from typing import List
 
-from django.db import models
 from pgvector.django import CosineDistance
 
 from core.models import DocumentChunk
@@ -41,6 +40,7 @@ _embedder = SentenceTransformer(EMBEDDING_MODEL_NAME, device=_DEVICE)
 # =====================================================
 # Text normalization + chunking
 # =====================================================
+
 
 def normalize_text(text: str | None) -> str:
     if not text:
@@ -81,9 +81,11 @@ def chunk_text(
 
     return out
 
+
 # =====================================================
 # Embeddings (local model) – pad to DB dim
 # =====================================================
+
 
 def _pad_to_db_dim(vec: np.ndarray) -> np.ndarray:
     """
@@ -130,9 +132,11 @@ def embed_texts(texts: List[str]) -> list[list[float]]:
     padded = np.vstack([_pad_to_db_dim(v) for v in embeddings])
     return padded.tolist()
 
+
 # =====================================================
 # Vector search
 # =====================================================
+
 
 def search_kb_chunks_for_query(
     org_id: int,
@@ -163,8 +167,7 @@ def search_kb_chunks_for_query(
     [query_vec] = embed_texts([query])
 
     qs = (
-        DocumentChunk.objects
-        .filter(organization_id=org_id, embedding__isnull=False)
+        DocumentChunk.objects.filter(organization_id=org_id, embedding__isnull=False)
         .select_related("document")
         .annotate(distance=CosineDistance("embedding", query_vec))
         .order_by("distance")[:k]

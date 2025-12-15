@@ -6,7 +6,9 @@ def backfill_jobrun_idempotency_key(apps, schema_editor):
     JobRun = apps.get_model("core", "JobRun")
 
     # fill NULLs and also empty-string, just in case
-    qs = JobRun.objects.filter(idempotency_key__isnull=True) | JobRun.objects.filter(idempotency_key="")
+    qs = JobRun.objects.filter(idempotency_key__isnull=True) | JobRun.objects.filter(
+        idempotency_key=""
+    )
 
     for jr in qs.iterator():
         jr.idempotency_key = f"legacy-{jr.id}"  # unique, stable, <= 80 chars
