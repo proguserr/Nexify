@@ -1,8 +1,6 @@
 services:
   postgres:
-    # if you want pgvector locally, switch to this:
-    # image: ankane/pgvector:latest
-    image: postgres:16
+    image: ankane/pgvector:latest       # use pgvector image so embeddings work
     environment:
       POSTGRES_DB: app
       POSTGRES_USER: app
@@ -19,27 +17,18 @@ services:
 
   web:
     build: .
-    container_name: nexify-web
-    command: >
-      sh -c "
-        python manage.py migrate --noinput &&
-        gunicorn config.wsgi:application --bind 0.0.0.0:8000
-      "
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
     environment:
-      DB_NAME: app
-      DB_USER: app
-      DB_PASSWORD: app
-      DB_HOST: postgres     # matches the service name above
-      DB_PORT: 5432
       DATABASE_URL: postgres://app:app@postgres:5432/app
-
       DJANGO_SETTINGS_MODULE: config.settings
       SECRET_KEY: local-dev-secret
       DEBUG: "1"
-    depends_on:
-      - postgres
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
 
 volumes:
   pgdata:
