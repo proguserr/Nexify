@@ -187,7 +187,6 @@ class JobRun(models.Model):
     organization = models.ForeignKey(
         Organization, on_delete=models.CASCADE, related_name="job_runs"
     )
-
     ticket = models.ForeignKey(
         Ticket, on_delete=models.CASCADE, related_name="job_runs"
     )
@@ -208,8 +207,12 @@ class JobRun(models.Model):
         related_name="triggered_job_runs",
     )
 
-    # TEMPORARILY nullable for migration safety
+    # idempotency for “same request, same job”
     idempotency_key = models.CharField(max_length=80)
+
+    # 🔹 NEW: retry bookkeeping
+    attempt_count = models.PositiveIntegerField(default=0)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         indexes = [
@@ -226,7 +229,12 @@ class JobRun(models.Model):
     def mark_running(self):
         self.status = self.Status.RUNNING
         self.started_at = timezone.now()
-        self.save(update_fields=["status", "started_at"])
+        # increment attempts when we actually start work
+        self.attempt_count += 1
+        self.last_attempt_at = self.started_at
+        self.save(
+            update_fields=["status", "started_at", "attempt_count", "last_attempt_at"]
+        )
 
     def mark_succeeded(self):
         self.status = self.Status.SUCCEEDED
@@ -237,7 +245,8 @@ class JobRun(models.Model):
         self.status = self.Status.FAILED
         self.error = msg
         self.finished_at = timezone.now()
-        self.save(update_fields=["status", "error", "finished_at"])
+        self.last_attempt_at = self.finished_at
+        self.save(update_fields=["status", "error", "finished_at", "last_attempt_at"])
 
 
 class Suggestion(models.Model):
@@ -262,7 +271,6 @@ class Suggestion(models.Model):
         related_name="suggestion",
     )
 
-    # New status field with lowercase codes
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -277,6 +285,16 @@ class Suggestion(models.Model):
     )
     suggested_team = models.CharField(max_length=100, blank=True, default="")
     draft_reply = models.TextField(blank=True, default="")
+
+    # 🔹 NEW: classification of the ticket / suggestion, e.g. "billing", "login_issue"
+    classification = models.CharField(max_length=100, blank=True, default="")
+
+    # 🔹 NEW: citations backing this suggestion (chunk IDs, spans, etc.)
+    citations = models.JSONField(default=list, blank=True)
+
+    # 🔹 NEW: model confidence in this suggestion (0.0–1.0)
+    confidence = models.FloatField(null=True, blank=True)
+
     metadata = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
