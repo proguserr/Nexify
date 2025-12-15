@@ -73,3 +73,8 @@ tzlocal==5.3.1
 urllib3==2.6.2
 vine==5.1.0
 wcwidth==0.2.14
+black==24.10.0
+ruff==0.8.4
+django-prometheus==2.3.1
+prometheus-client==0.21.0
+
