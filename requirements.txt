@@ -1,3 +1,4 @@
+gunicorn==22.0.0
 amqp==5.3.1
 annotated-types==0.7.0
 anyio==4.12.0
@@ -77,4 +78,6 @@ black==24.10.0
 ruff==0.8.4
 django-prometheus==2.3.1
 prometheus-client==0.21.0
+locust==2.32.2
+django-cors-headers
 
