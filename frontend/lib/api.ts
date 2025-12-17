@@ -1,6 +1,11 @@
 // frontend/lib/api.ts
 "use client";
 
+// NOTE: minimal placeholders so TS knows these exist.
+// Replace `any` with real fields when your API shape is final.
+export type Ticket = any;
+export type Suggestion = any;
+
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
 
@@ -97,4 +102,65 @@ export async function fetchMe(accessToken: string) {
   }
 
   return data;
+}
+
+// --- Ticket detail & suggestion helpers for Nexify console ---
+
+export async function fetchTicketDetail(ticketId: string): Promise<Ticket> {
+  const res = await fetch(
+    `${API_BASE_URL.replace(/\/$/, "")}/tickets/${ticketId}`,
+  );
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch ticket ${ticketId}`);
+  }
+
+  return (await res.json()) as Ticket;
+}
+
+export async function fetchLatestSuggestionForTicket(
+  ticketId: string,
+): Promise<Suggestion | null> {
+  const res = await fetch(
+    `${API_BASE_URL.replace(/\/$/, "")}/tickets/${ticketId}/suggestions/latest`,
+  );
+
+  if (res.status === 404) {
+    // No suggestion yet
+    return null;
+  }
+
+  if (!res.ok) {
+    throw new Error(
+      `Failed to fetch latest suggestion for ticket ${ticketId}`,
+    );
+  }
+
+  return (await res.json()) as Suggestion;
+}
+
+export async function triggerTriage(ticketId: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE_URL.replace(/\/$/, "")}/tickets/${ticketId}/triage`,
+    {
+      method: "POST",
+    },
+  );
+
+  if (!res.ok) {
+    throw new Error(`Failed to trigger triage for ticket ${ticketId}`);
+  }
+}
+
+export async function approveSuggestion(ticketId: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE_URL.replace(/\/$/, "")}/tickets/${ticketId}/approve`,
+    {
+      method: "POST",
+    },
+  );
+
+  if (!res.ok) {
+    throw new Error(`Failed to approve suggestion for ticket ${ticketId}`);
+  }
 }
