@@ -18,7 +18,11 @@ from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env", override=True)
+
+# IMPORTANT:
+# Do NOT override existing env vars (e.g. from Docker).
+# Docker env (DATABASE_URL, etc.) should win over .env.
+load_dotenv(BASE_DIR / ".env")  # no override=True
 
 
 # Quick-start development settings - unsuitable for production
@@ -36,6 +40,7 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 # Application definition
 
 INSTALLED_APPS = [
+    "corsheaders",
     "django_prometheus",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -51,6 +56,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -84,21 +90,19 @@ WSGI_APPLICATION = "config.wsgi.application"
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=2),  # was minutes=5 by default
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-    # optional:
-    # "ROTATE_REFRESH_TOKENS": False,
-    # "BLACKLIST_AFTER_ROTATION": False,
-    # "UPDATE_LAST_LOGIN": False,
 }
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    "default": dj_database_url.config(
-        default=os.getenv("DATABASE_URL"),
-        conn_max_age=60,
-    )
-}
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    # default for NON-docker local dev: host Postgres on 5433
+    "postgres://app:app@localhost:5433/app",
+)
+
+DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)}
+
 default_engine = DATABASES["default"].get("ENGINE", "")
 
 if default_engine in (
@@ -117,9 +121,8 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "core.api.exceptions.api_exception_handler",
     "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
 }
-# Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
+# Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
@@ -137,7 +140,6 @@ AUTH_PASSWORD_VALIDATORS = [
 
 
 # Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
 
 LANGUAGE_CODE = "en-us"
 
@@ -148,13 +150,9 @@ USE_I18N = True
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.2/howto/static-files/
+# Static files
 
 STATIC_URL = "static/"
-
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -166,3 +164,37 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+
+
+# ---------------------------------------------------
+# CORS (for frontend on localhost:3000 / 3001)
+# ---------------------------------------------------
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+# Next sometimes jumps to 3001 if 3000 is busy – optional but handy:
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^http://localhost:\d+$",
+    r"^http://127\.0\.0\.1:\d+$",
+]
+
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+    "cache-control",
+    "pragma",
+    "idempotency-key",
+]

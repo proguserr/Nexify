@@ -118,14 +118,23 @@ class SuggestionSerializer(serializers.ModelSerializer):
             "organization",
             "ticket",
             "job_run",
+            "status",
             "suggested_priority",
             "suggested_team",
             "draft_reply",
+            "classification",
+            "citations",
+            "confidence",
             "metadata",
-            "status",
             "created_at",
         ]
-        read_only_fields = ["id", "organization", "ticket", "job_run", "created_at"]
+        read_only_fields = [
+            "id",
+            "organization",
+            "ticket",
+            "job_run",
+            "created_at",
+        ]
 
 
 class SuggestionUpdateAgentSerializer(serializers.ModelSerializer):

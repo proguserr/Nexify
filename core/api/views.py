@@ -49,6 +49,7 @@ from .serializers import (
 
 from core.kb import chunk_text, normalize_text, search_kb_chunks_for_query
 
+
 # -------------------------
 # Simple helpers (keep them here to avoid import shadowing issues)
 # -------------------------
@@ -213,6 +214,7 @@ class TicketTriggerTriageView(APIView):
         if len(idem_key) > 80:
             raise ValidationError({"Idempotency-Key": "Max length is 80 characters."})
 
+        # Create / reuse JobRun under lock
         try:
             with transaction.atomic():
                 job, created = JobRun.objects.select_for_update().get_or_create(
@@ -233,11 +235,17 @@ class TicketTriggerTriageView(APIView):
                 )
             created = False
 
-        should_enqueue = created or (
-            job.status == JobRun.Status.QUEUED and job.started_at is None
-        )
-        if should_enqueue:
-            run_ticket_triage.delay(job.id)
+        # For demo/local dev: run triage synchronously so UI gets the suggestion immediately
+        suggestion_id = run_ticket_triage(job.id)
+
+        suggestion = None
+        if suggestion_id is not None:
+            try:
+                suggestion = Suggestion.objects.select_related(
+                    "ticket", "organization", "job_run"
+                ).get(id=suggestion_id)
+            except Suggestion.DoesNotExist:
+                suggestion = None
 
         payload = {
             "job_run_id": job.id,
@@ -246,11 +254,10 @@ class TicketTriggerTriageView(APIView):
             "started_at": job.started_at,
             "finished_at": job.finished_at,
             "error": job.error,
+            "suggestion": SuggestionSerializer(suggestion).data if suggestion else None,
         }
 
-        return Response(
-            payload, status=status.HTTP_202_ACCEPTED if created else status.HTTP_200_OK
-        )
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 # -------------------------
@@ -352,122 +359,6 @@ class SuggestionViewSet(
                     "changes": changes,
                 },
             )
-
-
-class SuggestionApproveView(APIView):
-    """
-    POST /api/organizations/<org_id>/tickets/<ticket_id>/suggestions/<sid>/approve/
-    Marks a suggestion as approved and logs a TicketEvent.
-    """
-
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, org_id: int, ticket_id: int, sid: int):
-        # must belong to org
-        if not Membership.objects.filter(
-            user=request.user, organization_id=org_id
-        ).exists():
-            raise NotFound()
-
-        role = user_role_in_org(request.user, org_id)
-        if role not in ("admin", "agent"):
-            raise PermissionDenied("Only admin/agent can approve suggestions.")
-
-        suggestion = get_object_or_404(
-            Suggestion,
-            id=sid,
-            organization_id=org_id,
-            ticket_id=ticket_id,
-        )
-
-        old_status = suggestion.status
-        if old_status == Suggestion.Status.APPROVED:
-            # idempotent: approving again is OK
-            return Response(
-                {"detail": "Suggestion already approved.", "status": suggestion.status},
-                status=status.HTTP_200_OK,
-            )
-
-        suggestion.status = Suggestion.Status.APPROVED
-        suggestion.save(update_fields=["status"])
-
-        TicketEvent.objects.create(
-            organization=suggestion.organization,
-            ticket=suggestion.ticket,
-            event_type=TicketEvent.EventType.SUGGESTION_APPROVED,
-            actor_type=TicketEvent.ActorType.USER,
-            actor_user=request.user,
-            payload={
-                "suggestion_id": suggestion.id,
-                "from_status": old_status,
-                "to_status": suggestion.status,
-            },
-        )
-
-        return Response(
-            {
-                "id": suggestion.id,
-                "status": suggestion.status,
-            },
-            status=status.HTTP_200_OK,
-        )
-
-
-class SuggestionRejectView(APIView):
-    """
-    POST /api/organizations/<org_id>/tickets/<ticket_id>/suggestions/<sid>/reject/
-    Marks a suggestion as rejected and logs a TicketEvent.
-    """
-
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, org_id: int, ticket_id: int, sid: int):
-        if not Membership.objects.filter(
-            user=request.user, organization_id=org_id
-        ).exists():
-            raise NotFound()
-
-        role = user_role_in_org(request.user, org_id)
-        if role not in ("admin", "agent"):
-            raise PermissionDenied("Only admin/agent can reject suggestions.")
-
-        suggestion = get_object_or_404(
-            Suggestion,
-            id=sid,
-            organization_id=org_id,
-            ticket_id=ticket_id,
-        )
-
-        old_status = suggestion.status
-        if old_status == Suggestion.Status.REJECTED:
-            return Response(
-                {"detail": "Suggestion already rejected.", "status": suggestion.status},
-                status=status.HTTP_200_OK,
-            )
-
-        suggestion.status = Suggestion.Status.REJECTED
-        suggestion.save(update_fields=["status"])
-
-        TicketEvent.objects.create(
-            organization=suggestion.organization,
-            ticket=suggestion.ticket,
-            event_type=TicketEvent.EventType.SUGGESTION_REJECTED,
-            actor_type=TicketEvent.ActorType.USER,
-            actor_user=request.user,
-            payload={
-                "suggestion_id": suggestion.id,
-                "from_status": old_status,
-                "to_status": suggestion.status,
-            },
-        )
-
-        return Response(
-            {
-                "id": suggestion.id,
-                "status": suggestion.status,
-            },
-            status=status.HTTP_200_OK,
-        )
 
 
 # -------------------------
@@ -646,3 +537,139 @@ class KnowledgeBaseRetrieveView(APIView):
         )
 
         return Response({"results": results}, status=status.HTTP_200_OK)
+
+
+class SuggestionApproveView(APIView):
+    """
+    POST /api/organizations/<org_id>/tickets/<ticket_id>/suggestions/<sid>/approve/
+
+    Marks a suggestion as accepted, applies suggested fields to the ticket,
+    and logs a TicketEvent.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id: int, ticket_id: int, sid: int):
+        # must belong to org
+        if not Membership.objects.filter(
+            user=request.user, organization_id=org_id
+        ).exists():
+            raise NotFound()
+
+        role = user_role_in_org(request.user, org_id)
+        if role not in ("admin", "agent"):
+            raise PermissionDenied("Only admin/agent can approve suggestions.")
+
+        suggestion = get_object_or_404(
+            Suggestion,
+            id=sid,
+            organization_id=org_id,
+            ticket_id=ticket_id,
+        )
+
+        ticket = suggestion.ticket
+
+        if suggestion.status == Suggestion.Status.ACCEPTED:
+            # idempotent: approving again is OK
+            return Response(
+                SuggestionSerializer(suggestion).data,
+                status=status.HTTP_200_OK,
+            )
+
+        old_status = suggestion.status
+        suggestion.status = Suggestion.Status.ACCEPTED
+        suggestion.save(update_fields=["status"])
+
+        # Apply suggested changes to the ticket where present
+        updated_fields = []
+
+        if suggestion.suggested_priority and (
+            suggestion.suggested_priority != ticket.priority
+        ):
+            ticket.priority = suggestion.suggested_priority
+            updated_fields.append("priority")
+
+        if suggestion.suggested_team and (
+            suggestion.suggested_team != ticket.assigned_team
+        ):
+            ticket.assigned_team = suggestion.suggested_team
+            updated_fields.append("assigned_team")
+
+        if updated_fields:
+            ticket.save(update_fields=updated_fields)
+
+        TicketEvent.objects.create(
+            organization=suggestion.organization,
+            ticket=ticket,
+            job_run=suggestion.job_run,
+            event_type=TicketEvent.EventType.SUGGESTION_APPROVED,
+            actor_type=TicketEvent.ActorType.USER,
+            actor_user=request.user,
+            payload={
+                "suggestion_id": suggestion.id,
+                "from_status": old_status,
+                "to_status": suggestion.status,
+                "applied_fields": updated_fields,
+            },
+        )
+
+        return Response(
+            SuggestionSerializer(suggestion).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class SuggestionRejectView(APIView):
+    """
+    POST /api/organizations/<org_id>/tickets/<ticket_id>/suggestions/<sid>/reject/
+
+    Marks a suggestion as rejected and logs a TicketEvent.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id: int, ticket_id: int, sid: int):
+        if not Membership.objects.filter(
+            user=request.user, organization_id=org_id
+        ).exists():
+            raise NotFound()
+
+        role = user_role_in_org(request.user, org_id)
+        if role not in ("admin", "agent"):
+            raise PermissionDenied("Only admin/agent can reject suggestions.")
+
+        suggestion = get_object_or_404(
+            Suggestion,
+            id=sid,
+            organization_id=org_id,
+            ticket_id=ticket_id,
+        )
+
+        if suggestion.status == Suggestion.Status.REJECTED:
+            return Response(
+                SuggestionSerializer(suggestion).data,
+                status=status.HTTP_200_OK,
+            )
+
+        old_status = suggestion.status
+        suggestion.status = Suggestion.Status.REJECTED
+        suggestion.save(update_fields=["status"])
+
+        TicketEvent.objects.create(
+            organization=suggestion.organization,
+            ticket=suggestion.ticket,
+            job_run=suggestion.job_run,
+            event_type=TicketEvent.EventType.SUGGESTION_REJECTED,
+            actor_type=TicketEvent.ActorType.USER,
+            actor_user=request.user,
+            payload={
+                "suggestion_id": suggestion.id,
+                "from_status": old_status,
+                "to_status": suggestion.status,
+            },
+        )
+
+        return Response(
+            SuggestionSerializer(suggestion).data,
+            status=status.HTTP_200_OK,
+        )

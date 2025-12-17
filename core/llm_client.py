@@ -1,5 +1,3 @@
-# core/llm_client.py
-
 import json
 import os
 import urllib.request
@@ -77,6 +75,7 @@ def classify_ticket_with_llm(
     Use Llama 3 via Ollama to:
       - classify the ticket (category/team/priority)
       - draft a reply
+      - optionally return classification, confidence, auto_resolve
       - return a structured dict with normalized keys.
 
     Returns dict with keys:
@@ -84,6 +83,9 @@ def classify_ticket_with_llm(
       - team: str
       - priority: str  (low|medium|high|urgent)
       - draft_reply: str
+      - classification: str (optional, falls back to category)
+      - confidence: float | None (0.0–1.0)
+      - auto_resolve: bool
       - raw_output: str (raw LLM response text)
     """
     kb_snippets = []
@@ -96,13 +98,18 @@ def classify_ticket_with_llm(
         "You MUST respond with a single JSON object only, no explanation.\n"
         "Schema:\n"
         "{\n"
-        '  "category": string,        # short category like "billing", "technical", "account"\n'
-        '  "team": string,            # team to route to, e.g. "billing", "support", "engineering"\n'
-        '  "priority": string,        # one of: "low", "medium", "high", "urgent"\n'
-        '  "draft_reply": string      # short 2-5 sentence reply to send the customer\n'
+        '  "category": string,          # short category like "billing", "technical", "account"\n'
+        '  "team": string,              # team to route to, e.g. "billing", "support", "engineering"\n'
+        '  "priority": string,          # one of: "low", "medium", "high", "urgent"\n'
+        '  "draft_reply": string,       # short 2-5 sentence reply to send the customer\n'
+        '  "classification": string,    # OPTIONAL: finer-grained label like "billing_refund"\n'
+        '  "confidence": number,        # OPTIONAL: 0.0–1.0 model confidence in the overall suggestion\n'
+        '  "auto_resolve": boolean      # OPTIONAL: true if it is safe to apply this suggestion automatically\n'
         "}\n"
         "If you are unsure, guess reasonable defaults: "
-        'category="general", team="support", priority="medium".'
+        'category="general", team="support", priority="medium".\n'
+        "If you are not confident enough to auto-resolve, set auto_resolve=false.\n"
+        "Respond with ONLY the JSON object."
     )
 
     user_msg = (
@@ -124,11 +131,31 @@ def classify_ticket_with_llm(
     except Exception as e:
         raise LLMError(f"Failed to parse JSON from LLM output: {e}; raw={raw!r}") from e
 
-    # Normalize keys and provide safe defaults
+    # Normalize priority and guard against invalid strings
+    priority = (parsed.get("priority") or "medium").lower()
+    if priority not in {"low", "medium", "high", "urgent"}:
+        priority = "medium"
+
+    # Optional fields
+    classification = parsed.get("classification") or parsed.get("category") or "general"
+
+    confidence = parsed.get("confidence", None)
+    try:
+        if confidence is not None:
+            confidence = float(confidence)
+    except (TypeError, ValueError):
+        confidence = None
+
+    auto_resolve_raw = parsed.get("auto_resolve", False)
+    auto_resolve = bool(auto_resolve_raw)
+
     return {
         "category": parsed.get("category") or "general",
         "team": parsed.get("team") or "support",
-        "priority": (parsed.get("priority") or "medium").lower(),
+        "priority": priority,
         "draft_reply": parsed.get("draft_reply") or "",
+        "classification": classification,
+        "confidence": confidence,
+        "auto_resolve": auto_resolve,
         "raw_output": raw,
     }
