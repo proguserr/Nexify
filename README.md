@@ -215,7 +215,7 @@ docker compose exec web python manage.py createsuperuser
 npm install
 npm run dev
 ```
-Visit: http://localhost:3000
+Visit: `http://localhost:3000`
 
 #Project status
 
@@ -226,7 +226,7 @@ Right now:
 I’m deliberately keeping the backend self-hosted instead of paying for a managed deployment. Anyone who wants to explore the system more deeply can clone the repo and run docker compose up to start the full stack.
 
 
-
+Demo link: `https://nexify-cyan.vercel.app/`
 
 
 
