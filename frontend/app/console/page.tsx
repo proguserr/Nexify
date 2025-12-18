@@ -1,35 +1,17 @@
+// frontend/app/console/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { apiFetch, API_BASE_URL, ORG_ID } from "../../lib/api";
+import {
+  apiFetch,
+  API_BASE_URL,
+  ORG_ID,
+  Ticket,
+  Suggestion,
+} from "../../lib/api";
 
-type Ticket = {
-  id: number;
-  organization: number;
-  requester_email: string;
-  subject: string;
-  body: string;
-  status: "open" | "in_progress" | "resolved";
-  priority: "low" | "medium" | "high" | "urgent";
-  assigned_team: string;
-  created_at: string;
-  updated_at: string;
-};
-
-type SuggestionStatus = "pending" | "accepted" | "rejected";
-
-type Suggestion = {
-  id: number;
-  organization: number;
-  ticket: number;
-  job_run: number;
-  suggested_priority: Ticket["priority"] | null;
-  suggested_team: string;
-  draft_reply: string;
-  metadata: any;
-  status: SuggestionStatus;
-  created_at: string;
-};
+type TriageState = "idle" | "loading" | "success" | "error";
+type ApproveRejectState = "idle" | "loading" | "success" | "error";
 
 type TicketEvent = {
   id: number;
@@ -39,9 +21,6 @@ type TicketEvent = {
   payload: any;
   created_at: string;
 };
-
-type TriageState = "idle" | "loading" | "success" | "error";
-type ApproveRejectState = "idle" | "loading" | "success" | "error";
 
 const IDEM_HEADER_NAME = "Idempotency-Key";
 
@@ -80,8 +59,8 @@ export default function ConsolePage() {
     async function loadTickets() {
       try {
         setGlobalError(null);
-        const data = await apiFetch(
-          `/organizations/${ORG_ID}/tickets/?ordering=-id`
+        const data = await apiFetch<{ results?: Ticket[] }>(
+          `/organizations/${ORG_ID}/tickets/?ordering=-id`,
         );
         const results = data.results ?? [];
         setTickets(results);
@@ -94,7 +73,7 @@ export default function ConsolePage() {
       }
     }
 
-    loadTickets();
+    void loadTickets();
   }, []);
 
   // -------------------------
@@ -109,18 +88,18 @@ export default function ConsolePage() {
       try {
         setGlobalError(null);
 
-        // 1) Suggestions (latest first)
-        const sugData = await apiFetch(
-          `/organizations/${ORG_ID}/tickets/${ticketId}/suggestions/`
+        // 1) Latest suggestion for this ticket
+        const sugData = await apiFetch<{ results?: Suggestion[] }>(
+          `/organizations/${ORG_ID}/tickets/${ticketId}/suggestions/?ordering=-created_at&limit=1`,
         );
-        const results: Suggestion[] = sugData.results ?? [];
+        const results = sugData.results ?? [];
         const latest = results[0] ?? null;
         setSuggestion(latest);
         setDraftText(latest?.draft_reply ?? "");
 
         // 2) Events (last few)
-        const evData = await apiFetch(
-          `/tickets/${ticketId}/events/?ordering=-created_at&limit=10`
+        const evData = await apiFetch<{ results?: TicketEvent[] }>(
+          `/tickets/${ticketId}/events/?ordering=-created_at&limit=10`,
         );
         setEvents(evData.results ?? []);
       } catch (err: any) {
@@ -129,7 +108,7 @@ export default function ConsolePage() {
       }
     }
 
-    loadSuggestionAndEvents();
+    void loadSuggestionAndEvents();
   }, [selectedTicket]);
 
   // -------------------------
@@ -154,7 +133,7 @@ export default function ConsolePage() {
           headers: {
             [IDEM_HEADER_NAME]: idemKey,
           },
-        }
+        },
       );
 
       console.log("Enqueued triage job:", job);
@@ -165,10 +144,10 @@ export default function ConsolePage() {
       for (let i = 0; i < 6; i++) {
         await new Promise((r) => setTimeout(r, 1000));
 
-        const sugData = await apiFetch(
-          `/organizations/${ORG_ID}/tickets/${ticketId}/suggestions/`
+        const sugData = await apiFetch<{ results?: Suggestion[] }>(
+          `/organizations/${ORG_ID}/tickets/${ticketId}/suggestions/?ordering=-created_at&limit=1`,
         );
-        const results: Suggestion[] = sugData.results ?? [];
+        const results = sugData.results ?? [];
 
         if (results.length > 0) {
           latest = results[0];
@@ -179,7 +158,7 @@ export default function ConsolePage() {
       if (!latest) {
         setTriageState("error");
         setGlobalError(
-          "Triage finished but no suggestion was created yet. Try again in a few seconds."
+          "Triage finished but no suggestion was created yet. Try again in a few seconds.",
         );
         return;
       }
@@ -205,15 +184,14 @@ export default function ConsolePage() {
     setGlobalError(null);
 
     try {
-      const res = await apiFetch(
+      const res = await apiFetch<Partial<Suggestion>>(
         `/organizations/${ORG_ID}/tickets/${selectedTicket.id}/suggestions/${suggestion.id}/approve/`,
         {
           method: "POST",
-        }
+        },
       );
 
-      // Update local suggestion status
-      const newStatus: SuggestionStatus = res.status ?? "accepted";
+      const newStatus = (res.status as Suggestion["status"]) ?? "accepted";
       const updated: Suggestion = {
         ...suggestion,
         status: newStatus,
@@ -235,14 +213,14 @@ export default function ConsolePage() {
     setGlobalError(null);
 
     try {
-      const res = await apiFetch(
+      const res = await apiFetch<Partial<Suggestion>>(
         `/organizations/${ORG_ID}/tickets/${selectedTicket.id}/suggestions/${suggestion.id}/reject/`,
         {
           method: "POST",
-        }
+        },
       );
 
-      const newStatus: SuggestionStatus = res.status ?? "rejected";
+      const newStatus = (res.status as Suggestion["status"]) ?? "rejected";
       const updated: Suggestion = {
         ...suggestion,
         status: newStatus,
@@ -347,7 +325,8 @@ export default function ConsolePage() {
             </div>
 
             <div className="mt-4 text-[11px] text-slate-500">
-              API base URL: <span className="text-slate-300">{API_BASE_URL}</span>
+              API base URL:{" "}
+              <span className="text-slate-300">{API_BASE_URL}</span>
             </div>
           </section>
 
@@ -394,11 +373,14 @@ export default function ConsolePage() {
                     disabled={triageState === "loading"}
                     className="inline-flex items-center justify-center rounded-xl bg-emerald-500 text-slate-950 text-xs font-semibold px-3 py-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {triageState === "loading" ? "Running triage…" : "Run AI triage"}
+                    {triageState === "loading"
+                      ? "Running triage…"
+                      : "Run AI triage"}
                   </button>
                   {suggestion && (
                     <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/40 text-[11px]">
-                      Suggestion {suggestion.status === "pending"
+                      Suggestion{" "}
+                      {suggestion.status === "pending"
                         ? "ready"
                         : suggestion.status}
                     </span>
