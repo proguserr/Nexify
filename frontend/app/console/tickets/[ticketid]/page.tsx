@@ -1,10 +1,11 @@
-// frontend/app/console/tickets/[ticketId]/page.tsx
+// frontend/app/console/tickets/[ticketid]/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   API_BASE_URL,
+  ORG_ID,
   Ticket,
   Suggestion,
   fetchTicketDetail,
@@ -15,14 +16,13 @@ import {
 
 type LoadState = "idle" | "loading" | "success" | "error";
 
-const ORG_ID = 1; // for now
-
 export default function TicketDetailPage({
   params,
 }: {
-  params: { ticketId: string };
+  params: { ticketid: string };
 }) {
-  const ticketId = Number(params.ticketId);
+  const ticketId = Number(params.ticketid);
+
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
 
@@ -32,8 +32,8 @@ export default function TicketDetailPage({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!ticketId) return;
-    loadAll();
+    if (!Number.isFinite(ticketId)) return;
+    void loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticketId]);
 
@@ -55,14 +55,15 @@ export default function TicketDetailPage({
       setSuggestionState("success");
     } catch (err: any) {
       console.error(err);
-      setError(err.message ?? "Failed to load ticket");
+      setError(err?.message ?? "Failed to load ticket");
       setTicketState("error");
       setSuggestionState("error");
     }
   }
 
   async function handleRunTriage() {
-    if (!ticketId) return;
+    if (!Number.isFinite(ticketId)) return;
+
     setTriageRunning(true);
     setError(null);
 
@@ -73,24 +74,25 @@ export default function TicketDetailPage({
       setSuggestionState("success");
     } catch (err: any) {
       console.error(err);
-      setError(err.message ?? "Failed to run triage");
+      setError(err?.message ?? "Failed to run triage");
+      setSuggestionState("error");
     } finally {
       setTriageRunning(false);
     }
   }
 
   async function handleApprove() {
-    if (!suggestion) return;
+    if (!suggestion || !Number.isFinite(ticketId)) return;
     setSuggestionState("loading");
     setError(null);
 
     try {
-      const updated = await approveSuggestion(suggestion.id);
+      const updated = await approveSuggestion(ORG_ID, ticketId, suggestion.id);
       setSuggestion(updated);
       setSuggestionState("success");
     } catch (err: any) {
       console.error(err);
-      setError(err.message ?? "Failed to apply suggestion");
+      setError(err?.message ?? "Failed to apply suggestion");
       setSuggestionState("error");
     }
   }
@@ -117,7 +119,7 @@ export default function TicketDetailPage({
               ← Back to tickets
             </Link>
             <h1 className="text-2xl md:text-3xl font-semibold">
-              Ticket #{ticketId}
+              Ticket #{Number.isFinite(ticketId) ? ticketId : "—"}
             </h1>
             {ticket && (
               <p className="text-sm text-slate-400">
@@ -251,7 +253,7 @@ export default function TicketDetailPage({
                   <div className="space-y-1">
                     <div className="text-slate-400">Suggested priority</div>
                     <span className="inline-flex items-center rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] capitalize">
-                      {suggestion.suggested_priority}
+                      {suggestion.suggested_priority ?? "—"}
                     </span>
                   </div>
                   <div className="space-y-1">
@@ -279,7 +281,8 @@ export default function TicketDetailPage({
                   </button>
 
                   <div className="text-[11px] text-slate-500 text-right">
-                    API base URL: <span className="font-mono">{API_BASE_URL}</span>
+                    API base URL:{" "}
+                    <span className="font-mono">{API_BASE_URL}</span>
                   </div>
                 </div>
               </>
