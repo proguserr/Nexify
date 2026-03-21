@@ -46,19 +46,22 @@ def test_triage_auto_resolve_updates_ticket_and_creates_event():
         }
     ]
 
+    llm_out = {
+        "category": "billing",
+        "team": "billing",
+        "priority": "urgent",
+        "draft_reply": "We processed your refund.",
+        "classification": "billing_refund",
+        "confidence": 0.9,
+        "auto_resolve": True,
+        "raw_output": "{}",
+    }
+
     with patch("core.tasks.search_kb_chunks_for_query") as mock_search, patch(
-        "core.tasks._triage_rules"
-    ) as mock_rules:
+        "core.tasks.classify_ticket_with_llm"
+    ) as mock_llm:
         mock_search.return_value = kb_stub
-        mock_rules.return_value = {
-            "category": "billing",
-            "team": "billing",
-            "priority": "urgent",
-            "draft_reply": "We processed your refund.",
-            "classification": "billing_refund",
-            "confidence": 0.9,
-            "auto_resolve": True,
-        }
+        mock_llm.return_value = llm_out
 
         # Call task synchronously in tests
         run_ticket_triage(job.id)
@@ -128,19 +131,22 @@ def test_triage_low_confidence_does_not_auto_resolve():
         }
     ]
 
+    llm_out = {
+        "category": "billing",
+        "team": "billing",
+        "priority": "urgent",
+        "draft_reply": "We will check your request.",
+        "classification": "billing_refund",
+        "confidence": 0.5,  # below threshold
+        "auto_resolve": True,
+        "raw_output": "{}",
+    }
+
     with patch("core.tasks.search_kb_chunks_for_query") as mock_search, patch(
-        "core.tasks._triage_rules"
-    ) as mock_rules:
+        "core.tasks.classify_ticket_with_llm"
+    ) as mock_llm:
         mock_search.return_value = kb_stub
-        mock_rules.return_value = {
-            "category": "billing",
-            "team": "billing",
-            "priority": "urgent",
-            "draft_reply": "We will check your request.",
-            "classification": "billing_refund",
-            "confidence": 0.5,  # below threshold
-            "auto_resolve": True,
-        }
+        mock_llm.return_value = llm_out
 
         run_ticket_triage(job.id)
 

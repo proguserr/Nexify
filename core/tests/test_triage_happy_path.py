@@ -14,6 +14,7 @@ def test_triage_happy_path_creates_suggestion_and_updates_job():
 
     ticket = Ticket.objects.create(
         organization=org,
+        requester_email="cust@example.com",
         subject="Missing invoice",
         body="I did not receive my invoice for last month.",
         priority="high",
@@ -28,13 +29,19 @@ def test_triage_happy_path_creates_suggestion_and_updates_job():
         triggered_by=user,
     )
 
-    # Patch the LLM client so we don't hit Ollama in tests
-    with patch("core.llm_client.classify_ticket_with_llm") as mock_llm:
+    # Patch where the task imports the symbol (not core.llm_client only).
+    with patch("core.tasks.search_kb_chunks_for_query", return_value=[]), patch(
+        "core.tasks.classify_ticket_with_llm"
+    ) as mock_llm:
         mock_llm.return_value = {
             "category": "billing",
             "team": "support",
             "priority": "medium",
             "draft_reply": "Mock reply from test",
+            "classification": "billing",
+            "confidence": 0.9,
+            "auto_resolve": False,
+            "raw_output": "{}",
         }
 
         run_ticket_triage(job.id)

@@ -16,6 +16,7 @@ def test_ticket_ingest_detail_and_org_list():
     # Public ingest endpoint
     payload = {
         "organization_id": org.id,
+        "requester_email": "user@example.com",
         "subject": "Login not working",
         "body": "User cannot log in",
         "priority": "high",

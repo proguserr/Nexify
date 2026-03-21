@@ -9,15 +9,30 @@ from core.models import Ticket
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 
 class LLMError(Exception):
     """
-    Generic error raised when the LLM (Ollama) call fails
-    or returns an unexpected response.
+    Generic error raised when an LLM call fails or returns an unexpected response.
     """
 
     pass
+
+
+def _resolve_llm_provider() -> str:
+    """
+    Which backend classify_ticket_with_llm uses.
+
+    - Explicit LLM_PROVIDER=gemini|ollama wins.
+    - Otherwise: if GEMINI_API_KEY is set, use gemini; else ollama.
+    """
+    explicit = (os.getenv("LLM_PROVIDER") or "").strip().lower()
+    if explicit in ("gemini", "ollama"):
+        return explicit
+    if os.getenv("GEMINI_API_KEY", "").strip():
+        return "gemini"
+    return "ollama"
 
 
 def _ollama_chat(messages: List[Dict[str, str]], temperature: float = 0.2) -> str:
@@ -55,6 +70,47 @@ def _ollama_chat(messages: List[Dict[str, str]], temperature: float = 0.2) -> st
     return content
 
 
+def _gemini_generate_json(system_msg: str, user_msg: str) -> str:
+    """
+    Call Google Gemini with JSON response mode; return raw text (should be JSON).
+    """
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        raise LLMError("GEMINI_API_KEY is not set (required for LLM_PROVIDER=gemini)")
+
+    try:
+        import google.generativeai as genai
+    except ImportError as e:
+        raise LLMError("google-generativeai is not installed") from e
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        GEMINI_MODEL,
+        system_instruction=system_msg,
+    )
+
+    try:
+        response = model.generate_content(
+            user_msg,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0.2,
+            ),
+        )
+    except Exception as e:
+        raise LLMError(f"Gemini request failed: {e}") from e
+
+    try:
+        text = response.text
+    except Exception as e:
+        raise LLMError(f"Gemini response has no text: {e}; {response!r}") from e
+
+    if not text or not text.strip():
+        raise LLMError("Gemini returned empty response")
+
+    return text.strip()
+
+
 def _parse_json_from_text(text: str) -> Dict[str, Any]:
     """
     LLM may wrap JSON in extra text; try to extract the first {...} block
@@ -68,29 +124,55 @@ def _parse_json_from_text(text: str) -> Dict[str, Any]:
     return json.loads(snippet)
 
 
-def classify_ticket_with_llm(
-    ticket: Ticket, kb_results: List[Dict[str, Any]]
-) -> Dict[str, Any]:
-    """
-    Use Llama 3 via Ollama to:
-      - classify the ticket (category/team/priority)
-      - draft a reply
-      - optionally return classification, confidence, auto_resolve
-      - return a structured dict with normalized keys.
+def _parse_llm_json(raw: str) -> Dict[str, Any]:
+    """Parse model output; prefer strict JSON when response_mime_type is json."""
+    raw = raw.strip()
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+    return _parse_json_from_text(raw)
 
-    Returns dict with keys:
-      - category: str
-      - team: str
-      - priority: str  (low|medium|high|urgent)
-      - draft_reply: str
-      - classification: str (optional, falls back to category)
-      - confidence: float | None (0.0–1.0)
-      - auto_resolve: bool
-      - raw_output: str (raw LLM response text)
-    """
+
+def _normalize_llm_dict(parsed: Dict[str, Any], raw: str) -> Dict[str, Any]:
+    """Shared normalization for Ollama and Gemini outputs."""
+    priority = (parsed.get("priority") or "medium").lower()
+    if priority not in {"low", "medium", "high", "urgent"}:
+        priority = "medium"
+
+    classification = parsed.get("classification") or parsed.get("category") or "general"
+
+    confidence = parsed.get("confidence", None)
+    try:
+        if confidence is not None:
+            confidence = float(confidence)
+    except (TypeError, ValueError):
+        confidence = None
+
+    auto_resolve_raw = parsed.get("auto_resolve", False)
+    auto_resolve = bool(auto_resolve_raw)
+
+    return {
+        "category": parsed.get("category") or "general",
+        "team": parsed.get("team") or "support",
+        "priority": priority,
+        "draft_reply": parsed.get("draft_reply") or "",
+        "classification": classification,
+        "confidence": confidence,
+        "auto_resolve": auto_resolve,
+        "raw_output": raw,
+    }
+
+
+def _build_triage_prompts(
+    ticket: Ticket, kb_results: List[Dict[str, Any]]
+) -> tuple[str, str]:
     kb_snippets = []
     for r in kb_results[:5]:
-        kb_snippets.append(f"- [doc:{r['document_title']}] {r['text']}")
+        title = r.get("document_title") or "untitled"
+        kb_snippets.append(f"- [doc:{title}] {r.get('text', '')}")
     kb_block = "\n".join(kb_snippets) if kb_snippets else "None found."
 
     system_msg = (
@@ -120,42 +202,41 @@ def classify_ticket_with_llm(
         "Now produce ONLY the JSON object as described in the schema."
     )
 
+    return system_msg, user_msg
+
+
+def classify_ticket_with_llm(
+    ticket: Ticket, kb_results: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Classify a ticket and draft a reply using Gemini (default when GEMINI_API_KEY is set)
+    or Ollama (LLM_PROVIDER=ollama or no Gemini key).
+
+    Returns dict with keys:
+      - category: str
+      - team: str
+      - priority: str  (low|medium|high|urgent)
+      - draft_reply: str
+      - classification: str (optional, falls back to category)
+      - confidence: float | None (0.0–1.0)
+      - auto_resolve: bool
+      - raw_output: str (raw LLM response text)
+    """
+    system_msg, user_msg = _build_triage_prompts(ticket, kb_results)
     messages = [
         {"role": "system", "content": system_msg},
         {"role": "user", "content": user_msg},
     ]
 
-    raw = _ollama_chat(messages, temperature=0.2)
+    provider = _resolve_llm_provider()
+    if provider == "gemini":
+        raw = _gemini_generate_json(system_msg, user_msg)
+    else:
+        raw = _ollama_chat(messages, temperature=0.2)
+
     try:
-        parsed = _parse_json_from_text(raw)
+        parsed = _parse_llm_json(raw)
     except Exception as e:
         raise LLMError(f"Failed to parse JSON from LLM output: {e}; raw={raw!r}") from e
 
-    # Normalize priority and guard against invalid strings
-    priority = (parsed.get("priority") or "medium").lower()
-    if priority not in {"low", "medium", "high", "urgent"}:
-        priority = "medium"
-
-    # Optional fields
-    classification = parsed.get("classification") or parsed.get("category") or "general"
-
-    confidence = parsed.get("confidence", None)
-    try:
-        if confidence is not None:
-            confidence = float(confidence)
-    except (TypeError, ValueError):
-        confidence = None
-
-    auto_resolve_raw = parsed.get("auto_resolve", False)
-    auto_resolve = bool(auto_resolve_raw)
-
-    return {
-        "category": parsed.get("category") or "general",
-        "team": parsed.get("team") or "support",
-        "priority": priority,
-        "draft_reply": parsed.get("draft_reply") or "",
-        "classification": classification,
-        "confidence": confidence,
-        "auto_resolve": auto_resolve,
-        "raw_output": raw,
-    }
+    return _normalize_llm_dict(parsed, raw)

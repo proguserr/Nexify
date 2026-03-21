@@ -73,14 +73,15 @@ class TestTicketTriggerTriageView(APITestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
-    @patch("core.api.views.run_ticket_triage.delay")
-    def test_creates_jobrun_and_enqueues_task(self, delay_mock):
+    @patch("core.api.views.run_ticket_triage", return_value=None)
+    def test_creates_jobrun_and_runs_triage_sync(self, triage_mock):
+        """View runs triage synchronously (not Celery .delay); returns 200 with payload."""
         self.client.force_authenticate(user=self.user)
 
         resp = self.client.post(
             self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY="test-triage-1"
         )
-        self.assertEqual(resp.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
         job_id = resp.data["job_run_id"]
         job = JobRun.objects.get(id=job_id)
@@ -90,7 +91,7 @@ class TestTicketTriggerTriageView(APITestCase):
         self.assertEqual(job.status, JobRun.Status.QUEUED)
         self.assertEqual(job.triggered_by_id, self.user.id)
 
-        delay_mock.assert_called_once_with(job.id)
+        triage_mock.assert_called_once_with(job.id)
 
 
 class TestTicketTriggerTriageIdempotency(APITestCase):
@@ -128,14 +129,14 @@ class TestTicketTriggerTriageIdempotency(APITestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("Idempotency-Key", resp.data)
 
-    @patch("core.api.views.run_ticket_triage.delay")
-    def test_first_call_creates_jobrun_and_enqueues(self, delay_mock):
+    @patch("core.api.views.run_ticket_triage", return_value=None)
+    def test_first_call_creates_jobrun(self, triage_mock):
         idem = "triage-1"
         resp = self.client.post(
             self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY=idem
         )
 
-        self.assertEqual(resp.status_code, 202)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertTrue(resp.data["created"])
         self.assertEqual(resp.data["status"], JobRun.Status.QUEUED)
 
@@ -146,10 +147,10 @@ class TestTicketTriggerTriageIdempotency(APITestCase):
         self.assertEqual(job.organization_id, self.org.id)
         self.assertEqual(job.idempotency_key, idem)
 
-        delay_mock.assert_called_once_with(job.id)
+        triage_mock.assert_called_once_with(job.id)
 
-    @patch("core.api.views.run_ticket_triage.delay")
-    def test_same_idempotency_key_returns_same_jobrun(self, delay_mock):
+    @patch("core.api.views.run_ticket_triage", return_value=None)
+    def test_same_idempotency_key_returns_same_jobrun(self, triage_mock):
         idem = "triage-dup"
 
         r1 = self.client.post(
@@ -157,7 +158,6 @@ class TestTicketTriggerTriageIdempotency(APITestCase):
         )
         job_id_1 = r1.data["job_run_id"]
 
-        # Make it look "already started" so your should_enqueue logic doesn't enqueue again.
         JobRun.objects.filter(id=job_id_1).update(
             status=JobRun.Status.RUNNING, started_at=timezone.now()
         )
@@ -170,15 +170,15 @@ class TestTicketTriggerTriageIdempotency(APITestCase):
         self.assertFalse(r2.data["created"])
         self.assertEqual(r2.data["job_run_id"], job_id_1)
 
-        # still only enqueued once (from first call)
-        delay_mock.assert_called_once()
+        # Sync triage: each POST invokes run_ticket_triage (second call re-runs work)
+        self.assertEqual(triage_mock.call_count, 2)
 
         self.assertEqual(
             JobRun.objects.filter(ticket=self.ticket, idempotency_key=idem).count(), 1
         )
 
-    @patch("core.api.views.run_ticket_triage.delay")
-    def test_different_idempotency_key_creates_new_jobrun(self, delay_mock):
+    @patch("core.api.views.run_ticket_triage", return_value=None)
+    def test_different_idempotency_key_creates_new_jobrun(self, triage_mock):
         r1 = self.client.post(
             self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY="k1"
         )
@@ -186,9 +186,9 @@ class TestTicketTriggerTriageIdempotency(APITestCase):
             self.url, data={}, format="json", HTTP_IDEMPOTENCY_KEY="k2"
         )
 
-        self.assertEqual(r1.status_code, 202)
-        self.assertEqual(r2.status_code, 202)
+        self.assertEqual(r1.status_code, 200)
+        self.assertEqual(r2.status_code, 200)
         self.assertNotEqual(r1.data["job_run_id"], r2.data["job_run_id"])
 
         self.assertEqual(JobRun.objects.filter(ticket=self.ticket).count(), 2)
-        self.assertEqual(delay_mock.call_count, 2)
+        self.assertEqual(triage_mock.call_count, 2)

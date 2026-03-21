@@ -34,7 +34,14 @@ SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "0") == "1"
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+# Always allow local dev; merge with comma-separated ALLOWED_HOSTS (stripped).
+_default_allowed_hosts = ["localhost", "127.0.0.1"]
+_extra_allowed_hosts = [
+    h.strip()
+    for h in os.getenv("ALLOWED_HOSTS", "").split(",")
+    if h.strip()
+]
+ALLOWED_HOSTS = list(dict.fromkeys(_default_allowed_hosts + _extra_allowed_hosts))
 
 
 # Application definition

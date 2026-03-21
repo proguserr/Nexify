@@ -42,21 +42,33 @@ If you want to go deeper, you can clone the repo and run the full stack locally.
 
 ## 3. LLM & RAG (how the AI piece works)
 
-The triage flow is built around a simple **RAG-style pipeline**:
+The triage flow is a **RAG-style pipeline** implemented in `core/tasks.py` and `core/llm_client.py`:
 
-- Ticket text is used as the **query** into a small **knowledge base** (product notes, canned replies, policies, etc.).
-- The knowledge base is stored in Postgres using **pgvector** for embeddings.
-- The Celery worker:
-  1. Embeds the ticket text.
-  2. Retrieves the nearest KB chunks by vector similarity.
-  3. Calls an **LLM adapter** (designed to work with a local model via **Ollama** or any hosted LLM API).
-  4. Produces a structured `Suggestion` with:
-     - `suggested_priority`
-     - `suggested_team`
-     - `draft_reply`
-     - `metadata` (raw model info, retrieval context, etc.)
+1. **Retrieve** – Ticket subject + body are used as the query; `search_kb_chunks_for_query` returns the top‑k **KB chunks** for that organization (pgvector similarity when chunks have embeddings).
+2. **Classify** – `classify_ticket_with_llm` sends the ticket text and KB snippets to an LLM and expects **strict JSON** (category, team, priority, draft reply, optional confidence and `auto_resolve`).
+3. **Persist** – A `Suggestion` is created with **citations** from the KB hits; `metadata` includes `category` and a truncated `raw_output` when available.
+4. **Auto-resolve (optional)** – If the model sets `auto_resolve: true` **and** `confidence` is at least **0.85**, the ticket is updated (priority, assigned team, status `resolved`) and an `AUTO_RESOLUTION_APPLIED` event is recorded.
 
-The LLM client is intentionally thin and pluggable so the project can run both with a local Ollama setup and with a remote provider.
+### Google Gemini (default when configured)
+
+For demos and hosted setups, **Gemini** is used when `GEMINI_API_KEY` is set (unless you force another provider). Get a key from [Google AI Studio](https://aistudio.google.com/). The free tier (rate limits such as requests per minute and tokens per day) is usually enough for development.
+
+Environment variables (see also `.env.example`):
+
+| Variable | Purpose |
+|----------|---------|
+| `GEMINI_API_KEY` | Required for Gemini. When set, triage defaults to Gemini unless overridden. |
+| `GEMINI_MODEL` | Optional; default `gemini-2.0-flash`. |
+| `LLM_PROVIDER` | `gemini` – force Gemini; `ollama` – force local Ollama; `heuristic` – **no LLM call**, keyword rules only (offline / CI-friendly). |
+| `RUN_GEMINI_LIVE` | Set to `1` to enable the optional pytest that calls the **real** Gemini API (otherwise skipped; avoids quota in CI). |
+
+If the LLM call fails (network, quota, invalid JSON), triage **falls back** to the built-in heuristic classifier and sets `metadata.llm_fallback` and `metadata.llm_error`.
+
+**Secrets and restarts:** Put `GEMINI_API_KEY` (and optional `LLM_PROVIDER`, `GEMINI_MODEL`) in a **`.env`** file in the project root—**not** in `.env.example` (that file is a template and may be committed). Django loads `.env` via `config/settings.py`. After editing `.env`, **restart** `runserver` / gunicorn and any **Celery worker**. With **Docker Compose**, keep the same variables in `.env` beside `docker-compose.yml`; the `web` and `worker` services pass them through. If a key was ever committed or pasted into chat, **rotate it** in Google AI Studio.
+
+### Ollama (local)
+
+Set `LLM_PROVIDER=ollama` and run Ollama locally. Use `OLLAMA_BASE_URL` and `OLLAMA_MODEL` as needed. If `GEMINI_API_KEY` is **not** set and `LLM_PROVIDER` is unset, the client defaults to **Ollama** (previous behavior).
 
 ---
 
