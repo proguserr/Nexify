@@ -14,6 +14,7 @@ from .views import (
     DocumentViewSet,
     DocumentChunkViewSet,
     KnowledgeBaseRetrieveView,
+    DashboardView,
 )
 
 # Suggestions
@@ -63,6 +64,11 @@ urlpatterns = [
         "organizations/<int:org_id>/tickets/",
         OrganizationTicketListView.as_view(),
         name="org-ticket-list",
+    ),
+    path(
+        "organizations/<int:org_id>/dashboard/",
+        DashboardView.as_view(),
+        name="org-dashboard",
     ),
     # Auth
     path("auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),

@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   apiFetch,
   API_BASE_URL,
@@ -289,7 +290,13 @@ export default function ConsolePage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center flex-wrap gap-2 text-xs">
+          <Link
+            href="/console/dashboard"
+            className="px-3 py-1 rounded-full bg-slate-800/80 text-emerald-300 border border-slate-600 hover:border-emerald-500/50 hover:bg-slate-800 transition-colors"
+          >
+            Dashboard
+          </Link>
           <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/40">
             Backend: online
           </span>

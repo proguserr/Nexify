@@ -36,6 +36,15 @@ export type Suggestion = {
   created_at: string;
 };
 
+export type DashboardMetrics = {
+  total_triaged: number;
+  auto_resolved: number;
+  human_reviewed: number;
+  average_confidence: number;
+  acceptance_rate: number;
+  time_saved_minutes: number;
+};
+
 // ---- Base config ----
 
 export const API_BASE_URL =
@@ -132,6 +141,12 @@ export async function fetchMe(accessToken: string) {
   }
 
   return data;
+}
+
+export async function fetchDashboardMetrics(
+  orgId: number,
+): Promise<DashboardMetrics> {
+  return apiFetch<DashboardMetrics>(`/organizations/${orgId}/dashboard/`);
 }
 
 // ---- Ticket + suggestion helpers (used by console UI) ----

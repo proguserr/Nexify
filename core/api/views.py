@@ -1,6 +1,6 @@
 # core/api/views.py
 from django.db import transaction, IntegrityError
-from django.db.models import Count
+from django.db.models import Avg, Count
 from django.shortcuts import get_object_or_404
 
 from rest_framework import status, viewsets, mixins
@@ -537,6 +537,78 @@ class KnowledgeBaseRetrieveView(APIView):
         )
 
         return Response({"results": results}, status=status.HTTP_200_OK)
+
+
+class DashboardView(APIView):
+    """
+    GET /api/organizations/<org_id>/dashboard/
+
+    Aggregated metrics for the organization (members only).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id: int):
+        if org_id not in user_org_ids(request.user):
+            raise NotFound()
+
+        total_triaged = JobRun.objects.filter(
+            organization_id=org_id,
+            status=JobRun.Status.SUCCEEDED,
+        ).count()
+
+        auto_resolved = TicketEvent.objects.filter(
+            organization_id=org_id,
+            event_type=TicketEvent.EventType.AUTO_RESOLUTION_APPLIED,
+        ).count()
+
+        human_reviewed = Suggestion.objects.filter(
+            organization_id=org_id,
+            status__in=[
+                Suggestion.Status.ACCEPTED,
+                Suggestion.Status.REJECTED,
+            ],
+        ).count()
+
+        avg_row = Suggestion.objects.filter(organization_id=org_id).aggregate(
+            avg=Avg("confidence")
+        )
+        avg_raw = avg_row["avg"]
+        average_confidence = (
+            0.0 if avg_raw is None else round(float(avg_raw), 2)
+        )
+
+        accepted_count = Suggestion.objects.filter(
+            organization_id=org_id,
+            status=Suggestion.Status.ACCEPTED,
+        ).count()
+        reviewed_count = Suggestion.objects.filter(
+            organization_id=org_id,
+            status__in=[
+                Suggestion.Status.ACCEPTED,
+                Suggestion.Status.REJECTED,
+            ],
+        ).count()
+        if reviewed_count == 0:
+            acceptance_rate = 0.0
+        else:
+            acceptance_rate = round(
+                100.0 * accepted_count / reviewed_count, 1
+            )
+
+        time_saved_minutes = total_triaged * 4
+
+        return Response(
+            {
+                "total_triaged": total_triaged,
+                "auto_resolved": auto_resolved,
+                "human_reviewed": human_reviewed,
+                "average_confidence": average_confidence,
+                "acceptance_rate": acceptance_rate,
+                "time_saved_minutes": time_saved_minutes,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class SuggestionApproveView(APIView):
