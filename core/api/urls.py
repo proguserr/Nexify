@@ -9,6 +9,8 @@ from .views import (
     MeView,
     TicketTriggerTriageView,
     SuggestionViewSet,
+    SuggestionApproveView,
+    SuggestionRejectView,
     DocumentViewSet,
     DocumentChunkViewSet,
     KnowledgeBaseRetrieveView,
@@ -83,6 +85,16 @@ urlpatterns = [
         "organizations/<int:org_id>/tickets/<int:ticket_id>/suggestions/<int:sid>/",
         suggestion_detail,
         name="ticket-suggestion-detail",
+    ),
+    path(
+        "organizations/<int:org_id>/tickets/<int:ticket_id>/suggestions/<int:sid>/approve/",
+        SuggestionApproveView.as_view(),
+        name="ticket-suggestion-approve",
+    ),
+    path(
+        "organizations/<int:org_id>/tickets/<int:ticket_id>/suggestions/<int:sid>/reject/",
+        SuggestionRejectView.as_view(),
+        name="ticket-suggestion-reject",
     ),
     # Knowledge base documents (PR8–10)
     path(
