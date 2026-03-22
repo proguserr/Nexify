@@ -63,19 +63,19 @@ Ticket updated → audit trail complete
 
 ## Key Engineering Decisions
 
-**Why async triage via Celery?**
+**Async triage via Celery?**
 LLM calls take 2-5 seconds. Blocking an HTTP request for that duration would degrade the API for all concurrent users. Celery decouples the slow work from the fast HTTP response. The API immediately returns a job ID. The worker processes in the background.
 
-**Why idempotency keys on JobRun?**
+**Idempotency keys on JobRun?**
 If an agent double-clicks "Run triage" or a network retry fires, we must not create duplicate LLM calls or duplicate suggestions. The idempotency key enforced at both application level (`select_for_update`) and database level (unique constraint) guarantees exactly-once execution.
 
-**Why pgvector instead of a dedicated vector database?**
+**Pgvector instead of a dedicated vector database?**
 At current scale, keeping vectors in Postgres eliminates operational complexity — one database to manage, one connection pool, one backup strategy. A dedicated vector database like Pinecone adds value at millions of embeddings. Premature optimization otherwise.
 
-**Why confidence-based auto-resolution?**
+**Confidence-based auto-resolution?**
 The system should never auto-resolve when it's uncertain. A configurable confidence threshold means the AI acts autonomously only when it has strong signal. Everything below threshold surfaces for human review. This is the core safety guardrail.
 
-**Why multi-tenant from day one?**
+**Multi-tenant from day one?**
 Multi-tenancy is hard to retrofit. Every model carries `organization_id`. Every query is scoped to it. Every API endpoint validates membership before returning data. Building this correctly from the start means the system can serve multiple organizations without architectural changes.
 
 ---
