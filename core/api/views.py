@@ -544,14 +544,14 @@ class DashboardView(APIView):
     GET /api/organizations/<org_id>/dashboard/
 
     Aggregated metrics for the organization (members only).
+
+    Optional query: ?detail=triaged|reviewed|confidence
+    — returns the same summary metrics plus detail payload for drill-down.
     """
 
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, org_id: int):
-        if org_id not in user_org_ids(request.user):
-            raise NotFound()
-
+    def _build_dashboard_summary(self, org_id: int) -> dict:
         total_triaged = JobRun.objects.filter(
             organization_id=org_id,
             status=JobRun.Status.SUCCEEDED,
@@ -598,17 +598,139 @@ class DashboardView(APIView):
 
         time_saved_minutes = total_triaged * 4
 
-        return Response(
-            {
-                "total_triaged": total_triaged,
-                "auto_resolved": auto_resolved,
-                "human_reviewed": human_reviewed,
-                "average_confidence": average_confidence,
-                "acceptance_rate": acceptance_rate,
-                "time_saved_minutes": time_saved_minutes,
-            },
-            status=status.HTTP_200_OK,
+        return {
+            "total_triaged": total_triaged,
+            "auto_resolved": auto_resolved,
+            "human_reviewed": human_reviewed,
+            "average_confidence": average_confidence,
+            "acceptance_rate": acceptance_rate,
+            "time_saved_minutes": time_saved_minutes,
+        }
+
+    def _triaged_items(self, org_id: int) -> list[dict]:
+        jobs = (
+            JobRun.objects.filter(
+                organization_id=org_id,
+                status=JobRun.Status.SUCCEEDED,
+            )
+            .select_related("ticket")
+            .order_by("-finished_at", "-id")
         )
+        out: list[dict] = []
+        for job in jobs:
+            try:
+                sug = job.suggestion
+            except Suggestion.DoesNotExist:
+                continue
+            t = job.ticket
+            triage_at = job.finished_at or job.started_at
+            out.append(
+                {
+                    "ticket_id": t.id,
+                    "subject": t.subject,
+                    "requester_email": t.requester_email,
+                    "triage_at": triage_at.isoformat() if triage_at else None,
+                    "confidence": sug.confidence,
+                    "suggested_team": sug.suggested_team or "",
+                    "ticket_status": t.status,
+                }
+            )
+        return out
+
+    def _reviewed_items(self, org_id: int) -> list[dict]:
+        suggestions = (
+            Suggestion.objects.filter(
+                organization_id=org_id,
+                status__in=[
+                    Suggestion.Status.ACCEPTED,
+                    Suggestion.Status.REJECTED,
+                ],
+            )
+            .select_related("ticket")
+            .order_by("-id")
+        )
+        out: list[dict] = []
+        for s in suggestions:
+            ev_type = (
+                TicketEvent.EventType.SUGGESTION_APPROVED
+                if s.status == Suggestion.Status.ACCEPTED
+                else TicketEvent.EventType.SUGGESTION_REJECTED
+            )
+            ev = (
+                TicketEvent.objects.filter(
+                    organization_id=org_id,
+                    ticket_id=s.ticket_id,
+                    event_type=ev_type,
+                    payload__suggestion_id=s.id,
+                )
+                .select_related("actor_user")
+                .order_by("-created_at")
+                .first()
+            )
+            reviewed_at = ev.created_at.isoformat() if ev else None
+            reviewer = None
+            if ev and ev.actor_user:
+                reviewer = ev.actor_user.get_username()
+            out.append(
+                {
+                    "ticket_id": s.ticket_id,
+                    "subject": s.ticket.subject,
+                    "suggestion_status": s.status,
+                    "reviewed_at": reviewed_at,
+                    "reviewer_username": reviewer,
+                }
+            )
+        return out
+
+    def _confidence_distribution(self, org_id: int) -> dict:
+        base = Suggestion.objects.filter(organization_id=org_id)
+        high = base.filter(
+            confidence__isnull=False,
+            confidence__gte=0.8,
+            confidence__lte=1.0,
+        ).count()
+        medium = base.filter(
+            confidence__isnull=False,
+            confidence__gte=0.6,
+            confidence__lt=0.8,
+        ).count()
+        low = base.filter(
+            confidence__isnull=False,
+            confidence__lt=0.6,
+        ).count()
+        unknown = base.filter(confidence__isnull=True).count()
+        total_banded = high + medium + low
+        if total_banded == 0:
+            high_pct = medium_pct = low_pct = 0.0
+        else:
+            high_pct = round(100.0 * high / total_banded, 1)
+            medium_pct = round(100.0 * medium / total_banded, 1)
+            low_pct = round(100.0 * low / total_banded, 1)
+        return {
+            "high": high,
+            "medium": medium,
+            "low": low,
+            "unknown": unknown,
+            "high_pct": high_pct,
+            "medium_pct": medium_pct,
+            "low_pct": low_pct,
+            "total_with_confidence": total_banded,
+        }
+
+    def get(self, request, org_id: int):
+        if org_id not in user_org_ids(request.user):
+            raise NotFound()
+
+        data = self._build_dashboard_summary(org_id)
+        detail = (request.query_params.get("detail") or "").strip().lower()
+        if detail == "triaged":
+            data["triaged_items"] = self._triaged_items(org_id)
+        elif detail == "reviewed":
+            data["reviewed_items"] = self._reviewed_items(org_id)
+        elif detail == "confidence":
+            data["confidence_distribution"] = self._confidence_distribution(org_id)
+
+        return Response(data, status=status.HTTP_200_OK)
 
 
 class SuggestionApproveView(APIView):

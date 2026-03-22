@@ -36,6 +36,35 @@ export type Suggestion = {
   created_at: string;
 };
 
+export type DashboardTriagedRow = {
+  ticket_id: number;
+  subject: string;
+  requester_email: string;
+  triage_at: string | null;
+  confidence: number | null;
+  suggested_team: string;
+  ticket_status: string;
+};
+
+export type DashboardReviewedRow = {
+  ticket_id: number;
+  subject: string;
+  suggestion_status: "accepted" | "rejected";
+  reviewed_at: string | null;
+  reviewer_username: string | null;
+};
+
+export type DashboardConfidenceDistribution = {
+  high: number;
+  medium: number;
+  low: number;
+  unknown: number;
+  high_pct: number;
+  medium_pct: number;
+  low_pct: number;
+  total_with_confidence: number;
+};
+
 export type DashboardMetrics = {
   total_triaged: number;
   auto_resolved: number;
@@ -43,7 +72,12 @@ export type DashboardMetrics = {
   average_confidence: number;
   acceptance_rate: number;
   time_saved_minutes: number;
+  triaged_items?: DashboardTriagedRow[];
+  reviewed_items?: DashboardReviewedRow[];
+  confidence_distribution?: DashboardConfidenceDistribution;
 };
+
+export type DashboardDetailKind = "triaged" | "reviewed" | "confidence";
 
 // ---- Base config ----
 
@@ -145,8 +179,14 @@ export async function fetchMe(accessToken: string) {
 
 export async function fetchDashboardMetrics(
   orgId: number,
+  options?: { detail?: DashboardDetailKind },
 ): Promise<DashboardMetrics> {
-  return apiFetch<DashboardMetrics>(`/organizations/${orgId}/dashboard/`);
+  const q = options?.detail
+    ? `?detail=${encodeURIComponent(options.detail)}`
+    : "";
+  return apiFetch<DashboardMetrics>(
+    `/organizations/${orgId}/dashboard/${q}`,
+  );
 }
 
 // ---- Ticket + suggestion helpers (used by console UI) ----
