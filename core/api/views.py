@@ -638,7 +638,7 @@ class DashboardView(APIView):
         return out
 
     def _reviewed_items(self, org_id: int) -> list[dict]:
-        suggestions = (
+        suggestions = list(
             Suggestion.objects.filter(
                 organization_id=org_id,
                 status__in=[
@@ -649,24 +649,50 @@ class DashboardView(APIView):
             .select_related("ticket")
             .order_by("-id")
         )
-        out: list[dict] = []
-        for s in suggestions:
-            ev_type = (
+        if not suggestions:
+            return []
+
+        suggestion_ids = [s.id for s in suggestions]
+        status_by_sid = {s.id: s.status for s in suggestions}
+
+        # Single query for all review events; map latest event per suggestion id (match status).
+        events = (
+            TicketEvent.objects.filter(
+                organization_id=org_id,
+                event_type__in=[
+                    TicketEvent.EventType.SUGGESTION_APPROVED,
+                    TicketEvent.EventType.SUGGESTION_REJECTED,
+                ],
+                payload__suggestion_id__in=suggestion_ids,
+            )
+            .select_related("actor_user")
+            .order_by("-created_at")
+        )
+
+        ev_by_suggestion: dict[int, TicketEvent] = {}
+        for ev in events:
+            raw_sid = ev.payload.get("suggestion_id")
+            if raw_sid is None:
+                continue
+            try:
+                sid = int(raw_sid)
+            except (TypeError, ValueError):
+                continue
+            if sid not in status_by_sid:
+                continue
+            expected_type = (
                 TicketEvent.EventType.SUGGESTION_APPROVED
-                if s.status == Suggestion.Status.ACCEPTED
+                if status_by_sid[sid] == Suggestion.Status.ACCEPTED
                 else TicketEvent.EventType.SUGGESTION_REJECTED
             )
-            ev = (
-                TicketEvent.objects.filter(
-                    organization_id=org_id,
-                    ticket_id=s.ticket_id,
-                    event_type=ev_type,
-                    payload__suggestion_id=s.id,
-                )
-                .select_related("actor_user")
-                .order_by("-created_at")
-                .first()
-            )
+            if ev.event_type != expected_type:
+                continue
+            if sid not in ev_by_suggestion:
+                ev_by_suggestion[sid] = ev
+
+        out: list[dict] = []
+        for s in suggestions:
+            ev = ev_by_suggestion.get(s.id)
             reviewed_at = ev.created_at.isoformat() if ev else None
             reviewer = None
             if ev and ev.actor_user:
