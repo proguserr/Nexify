@@ -9,6 +9,7 @@ import {
   Ticket,
   Suggestion,
 } from "../../lib/api";
+import { getEnvironmentLabel } from "../../lib/env";
 
 type TriageState = "idle" | "loading" | "success" | "error";
 type ApproveRejectState = "idle" | "loading" | "success" | "error";
@@ -23,6 +24,30 @@ type TicketEvent = {
 };
 
 const IDEM_HEADER_NAME = "Idempotency-Key";
+
+function confidenceBarClass(confidence: number | null | undefined): string {
+  if (confidence == null || Number.isNaN(Number(confidence))) {
+    return "bg-slate-600";
+  }
+  const c = Number(confidence);
+  if (c > 0.8) return "bg-emerald-500";
+  if (c > 0.6) return "bg-yellow-400";
+  return "bg-red-500";
+}
+
+/** Only load ticket-scoped APIs when we have a positive numeric id. */
+function resolveTicketId(ticket: Ticket | null): number | null {
+  if (!ticket) return null;
+  const raw = ticket.id as unknown;
+  const n =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string"
+        ? Number.parseInt(raw, 10)
+        : NaN;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
 
 export default function ConsolePage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -78,11 +103,18 @@ export default function ConsolePage() {
 
   // -------------------------
   // Whenever selectedTicket changes → load latest suggestion + events
+  // (only when a ticket with a valid numeric id is selected — avoids 404s on /tickets/undefined/events/)
   // -------------------------
 
   useEffect(() => {
-    if (!selectedTicket) return;
-    const ticketId = selectedTicket.id;
+    const ticketId = resolveTicketId(selectedTicket);
+
+    if (ticketId == null) {
+      setSuggestion(null);
+      setDraftText("");
+      setEvents([]);
+      return;
+    }
 
     async function loadSuggestionAndEvents() {
       try {
@@ -97,7 +129,7 @@ export default function ConsolePage() {
         setSuggestion(latest);
         setDraftText(latest?.draft_reply ?? "");
 
-        // 2) Events (last few)
+        // 2) Events (last few) — only after we know ticketId is valid
         const evData = await apiFetch<{ results?: TicketEvent[] }>(
           `/tickets/${ticketId}/events/?ordering=-created_at&limit=10`,
         );
@@ -262,7 +294,8 @@ export default function ConsolePage() {
             Backend: online
           </span>
           <span className="px-3 py-1 rounded-full bg-slate-800/80 text-slate-300 border border-slate-700">
-            Environment: local dev
+            Environment:{" "}
+            <span className="font-semibold">{getEnvironmentLabel()}</span>
           </span>
         </div>
       </header>
@@ -403,6 +436,38 @@ export default function ConsolePage() {
                         value={draftText}
                         onChange={(e) => setDraftText(e.target.value)}
                       />
+
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                          <span>Confidence</span>
+                          <span className="text-slate-300 tabular-nums">
+                            {suggestion.confidence != null &&
+                            !Number.isNaN(Number(suggestion.confidence))
+                              ? `${(Number(suggestion.confidence) * 100).toFixed(0)}%`
+                              : "—"}
+                          </span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-[width] ${confidenceBarClass(
+                              suggestion.confidence,
+                            )}`}
+                            style={{
+                              width:
+                                suggestion.confidence != null &&
+                                !Number.isNaN(Number(suggestion.confidence))
+                                  ? `${Math.min(
+                                      100,
+                                      Math.max(
+                                        0,
+                                        Number(suggestion.confidence) * 100,
+                                      ),
+                                    )}%`
+                                  : "0%",
+                            }}
+                          />
+                        </div>
+                      </div>
 
                       <div className="flex flex-wrap items-center gap-2 mb-3 text-[11px] text-slate-400">
                         <span>

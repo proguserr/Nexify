@@ -1,6 +1,7 @@
 // frontend/app/layout.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getEnvironmentLabel } from "../lib/env";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,6 +14,7 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const environmentLabel = getEnvironmentLabel();
   return (
     <html lang="en">
       <body className="min-h-screen bg-[#020617] text-slate-100 antialiased">
@@ -40,7 +42,8 @@ export default function RootLayout({
                   Backend: <span className="font-semibold">online</span>
                 </span>
                 <span className="px-3 py-1 rounded-full bg-slate-950 text-slate-300 border border-slate-700">
-                  Environment: <span className="font-semibold">local dev</span>
+                  Environment:{" "}
+                  <span className="font-semibold">{environmentLabel}</span>
                 </span>
               </div>
             </div>

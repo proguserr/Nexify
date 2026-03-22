@@ -29,6 +29,8 @@ export type Suggestion = {
   suggested_priority: TicketPriority | null;
   suggested_team: string;
   draft_reply: string;
+  /** 0.0–1.0 from triage; omitted/null if not set */
+  confidence?: number | null;
   metadata: any;
   status: SuggestionStatus;
   created_at: string;
