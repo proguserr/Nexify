@@ -9,7 +9,6 @@ from pgvector.django import CosineDistance
 
 from core.models import DocumentChunk
 
-from sentence_transformers import SentenceTransformer
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -30,12 +29,48 @@ EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", DEFAULT_MODEL_NAME)
 # IMPORTANT: force CPU – avoids MPS + Celery crashes on macOS.
 _DEVICE = "cpu"
 
-logger.info(
-    f"Using SentenceTransformer({EMBEDDING_MODEL_NAME}) on device={_DEVICE} "
-    f"for KB embeddings (model_dim={MODEL_DIM}, db_dim={EMBED_DIM})."
-)
+# Lazy-loaded; None means "not attempted yet", _EMBEDDER_FAILED means give up.
+_embedder: object | None = None
+_embedder_failed: bool = False
 
-_embedder = SentenceTransformer(EMBEDDING_MODEL_NAME, device=_DEVICE)
+
+def _load_sentence_transformer():
+    """
+    Import and construct SentenceTransformer only when embeddings are needed.
+    Returns None if the package is missing or the model cannot be loaded.
+    """
+    global _embedder, _embedder_failed
+    if _embedder_failed:
+        return None
+    if _embedder is not None:
+        return _embedder
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        logger.warning(
+            "sentence_transformers is not installed; KB vector embeddings disabled (%s)",
+            exc,
+        )
+        _embedder_failed = True
+        return None
+    try:
+        logger.info(
+            "Using SentenceTransformer(%s) on device=%s for KB embeddings "
+            "(model_dim=%s, db_dim=%s).",
+            EMBEDDING_MODEL_NAME,
+            _DEVICE,
+            MODEL_DIM,
+            EMBED_DIM,
+        )
+        _embedder = SentenceTransformer(EMBEDDING_MODEL_NAME, device=_DEVICE)
+        return _embedder
+    except Exception as exc:
+        logger.warning(
+            "Could not load SentenceTransformer; KB vector embeddings disabled (%s)",
+            exc,
+        )
+        _embedder_failed = True
+        return None
 
 # =====================================================
 # Text normalization + chunking
@@ -108,16 +143,26 @@ def embed_texts(texts: List[str]) -> list[list[float]]:
 
     Returns a list of EMBED_DIM-length vectors as Python lists,
     compatible with your pgvector(1536) column.
+
+    If ``sentence_transformers`` is unavailable or encoding fails, returns [].
     """
     if not texts:
         return []
 
-    embeddings = _embedder.encode(
-        texts,
-        show_progress_bar=False,
-        convert_to_numpy=True,
-        normalize_embeddings=True,
-    )
+    embedder = _load_sentence_transformer()
+    if embedder is None:
+        return []
+
+    try:
+        embeddings = embedder.encode(
+            texts,
+            show_progress_bar=False,
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+        )
+    except Exception as exc:
+        logger.warning("SentenceTransformer encode failed: %s", exc, exc_info=True)
+        return []
 
     if embeddings.ndim == 1:  # single text
         embeddings = embeddings.reshape(1, -1)
@@ -164,7 +209,10 @@ def search_kb_chunks_for_query(
         return []
 
     # Embed query once → already padded to EMBED_DIM
-    [query_vec] = embed_texts([query])
+    query_vecs = embed_texts([query])
+    if not query_vecs:
+        return []
+    query_vec = query_vecs[0]
 
     qs = (
         DocumentChunk.objects.filter(organization_id=org_id, embedding__isnull=False)
